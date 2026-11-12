@@ -6,6 +6,7 @@ import {
   FINAL_BAR_MAX,
   HARD_BAR_CAP,
   layoutSection,
+  MAX_GAP_BARS,
   planActiveCounts,
   planLayout,
   splitRun,
@@ -136,7 +137,39 @@ describe('silence layout', () => {
         run = f ? 0 : run + 1;
         longest = Math.max(longest, run);
       }
-      expect(longest).toBeLessThanOrEqual(10);
+      // 24 silent bars around 6 playing bars: 7 gaps of at most MAX_GAP_BARS hold them all.
+      expect(longest).toBeLessThanOrEqual(MAX_GAP_BARS);
+    }
+  });
+
+  it('layoutSection: silence before the section counts into its first gap', () => {
+    const rng = createRng(21);
+    for (let k = 0; k < 500; k++) {
+      const n = rng.int(4, 16);
+      const active = rng.int(2, n);
+      const silenceBefore = rng.int(0, MAX_GAP_BARS);
+      const flags = layoutSection(n, active, { lead: true, silenceBefore, trailMax: Infinity, firstRunMin: 1 }, rng);
+      let lead = 0;
+      while (lead < n && !flags[lead]) lead++;
+      // With two or more playing bars there is always an inner gap to take the silence,
+      // so the lead never has to pass what the cap leaves.
+      const rest = n - active;
+      const room = (active - 1) * MAX_GAP_BARS + MAX_GAP_BARS; // inner gaps + trail
+      if (rest <= room) expect(lead + silenceBefore).toBeLessThanOrEqual(MAX_GAP_BARS);
+    }
+  });
+
+  it('layoutSection: the hard rules win over the gap cap', () => {
+    const rng = createRng(22);
+    for (let k = 0; k < 300; k++) {
+      // One playing bar in a long section that must end playing: the lead takes all the silence.
+      const n = rng.int(7, 14);
+      const flags = layoutSection(n, 1, { lead: true, silenceBefore: MAX_GAP_BARS, trailMax: 1, firstRunMin: 1 }, rng);
+      expect(flags.filter(Boolean).length).toBe(1);
+      expect(flags[n - 1] || flags[n - 2]).toBe(true);
+      // No lead allowed: the section starts playing whatever the silence.
+      const noLead = layoutSection(n, 2, { lead: false, trailMax: Infinity, firstRunMin: 2 }, rng);
+      expect(noLead[0] && noLead[1]).toBe(true);
     }
   });
 

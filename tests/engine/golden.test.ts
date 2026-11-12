@@ -25,8 +25,8 @@ interface Pin {
 
 const PINS: Pin[] = [
   { params: { seed: 1, mode: 'majorPentatonic' }, notes: 38, bars: 21, durationSec: 94.907868, midiBytes: 708, midi: '391c12d2' },
-  { params: { seed: 2, mode: 'lydian' }, notes: 38, bars: 21, durationSec: 94.962978, midiBytes: 683, midi: '744df749' },
-  { params: { seed: 3, mode: 'dorian' }, notes: 38, bars: 21, durationSec: 94.943004, midiBytes: 679, midi: '5b02f4e2' },
+  { params: { seed: 2, mode: 'lydian' }, notes: 38, bars: 21, durationSec: 94.962978, midiBytes: 709, midi: 'c4f4f2cd' },
+  { params: { seed: 3, mode: 'dorian' }, notes: 38, bars: 21, durationSec: 94.943004, midiBytes: 712, midi: 'ae378278' },
   {
     params: { seed: 4, mode: 'aeolian', variation: 2, key: 9, tempo: 44, density: 3.2, restProbability: 0.1, register: 60, length: 150 },
     notes: 90,

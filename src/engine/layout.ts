@@ -26,6 +26,12 @@ const A_ACTIVE_WEIGHT = 1.05;
 const A2_ACTIVE_WEIGHT = 0.95;
 /** Relative share of notes per playing bar in A' (it thins out). */
 const A2_NOTE_WEIGHT = 0.9;
+/**
+ * Longest run of silent bars the planner makes on purpose. Silence spreads out over the gaps
+ * between phrases; a gap only grows beyond this when the bars cannot be placed otherwise.
+ * The silence at the end of one section and at the start of the next count as ONE gap.
+ */
+export const MAX_GAP_BARS = 4;
 
 export interface Chunk {
   index: number;
@@ -149,9 +155,15 @@ export function planActiveCounts(input: LayoutInput): { perSection: number[]; fi
 }
 
 interface SectionLayoutOptions {
-  /** May the section start with silent bars? */
+  /** May the section start with silent bars at all? (Hard rule.) */
   lead: boolean;
-  /** Most silent bars allowed at the end of the section. */
+  /**
+   * Silent bars the piece already ends with before this section. They and the lead of
+   * this section are ONE gap, so the lead only gets what MAX_GAP_BARS leaves. (Soft:
+   * given up when the silent bars cannot be placed otherwise.) Default 0.
+   */
+  silenceBefore?: number;
+  /** Most silent bars allowed at the end of the section. (Hard rule.) */
   trailMax: number;
   /** Minimum length of the first run. */
   firstRunMin: number;
@@ -168,7 +180,11 @@ export function layoutSection(n: number, active: number, opts: SectionLayoutOpti
   // Runs of about 2-3 bars; more and shorter runs when there is a lot of silence, so that
   // no single gap gets very long.
   const preferred = rng.range(2, 3.4);
-  const runCount = clamp(Math.max(Math.round(active / preferred), Math.ceil(rest / 4)), 1, maxRuns);
+  const leadMax = opts.lead ? Math.max(0, MAX_GAP_BARS - (opts.silenceBefore ?? 0)) : 0;
+  const trailMax = Math.max(0, Math.min(opts.trailMax, MAX_GAP_BARS));
+  // Enough runs that the silence fits into the gaps without any of them passing its cap.
+  const neededRuns = 1 + Math.ceil(Math.max(0, rest - leadMax - trailMax) / MAX_GAP_BARS);
+  const runCount = clamp(Math.max(Math.round(active / preferred), neededRuns), 1, maxRuns);
 
   const runs = new Array<number>(runCount).fill(1);
   runs[0] = firstMin;
@@ -180,13 +196,26 @@ export function layoutSection(n: number, active: number, opts: SectionLayoutOpti
   const gaps = new Array<number>(runCount + 1).fill(0);
   for (let i = 1; i < runCount; i++) gaps[i] = 1;
   for (let left = rest - (runCount - 1); left > 0; left--) {
-    // Every gap gets less likely to grow the longer it already is, so the silence spreads out.
+    // Every gap gets less likely to grow the longer it already is, so the silence spreads
+    // out, and no gap grows past its cap while another one still has room.
     const weights = gaps.map((g, i) => {
-      if (i === 0) return opts.lead ? 0.7 / (g + 1) : 0;
-      if (i === runCount) return g < opts.trailMax ? 0.7 / (g + 1) : 0;
-      return 1 / g;
+      if (i === 0) return g < leadMax ? 0.7 / (g + 1) : 0;
+      if (i === runCount) return g < trailMax ? 0.7 / (g + 1) : 0;
+      return g < MAX_GAP_BARS ? 1 / g : 0;
     });
-    const slot = weights.some((w) => w > 0) ? rng.weightedIndex(weights) : opts.lead ? 0 : runCount;
+    let slot: number;
+    if (weights.some((w) => w > 0)) {
+      slot = rng.weightedIndex(weights);
+    } else {
+      // Nothing has room left under the cap: the shortest gap that the hard rules allow
+      // takes the bar (the soft cap gives way, `lead` and `trailMax` do not).
+      slot = -1;
+      for (let i = 0; i <= runCount; i++) {
+        const allowed = i === 0 ? opts.lead : i === runCount ? gaps[i] < opts.trailMax : true;
+        if (allowed && (slot < 0 || gaps[i] < gaps[slot])) slot = i;
+      }
+      if (slot < 0) slot = opts.lead ? 0 : runCount;
+    }
     gaps[slot]++;
   }
 
@@ -223,11 +252,15 @@ export function planLayout(input: LayoutInput, rng: Rng): Layout {
   const active: boolean[] = [];
   const runsRng = rng.fork('runs');
   sections.forEach((section, i) => {
+    // Silent bars the piece already ends with: they and the lead of this section are one gap.
+    let trailing = 0;
+    while (trailing < active.length && !active[active.length - 1 - trailing]) trailing++;
     const flags = layoutSection(
       section.bars,
       perSection[i],
       {
         lead: i > 0,
+        silenceBefore: trailing,
         // The closing note sits in the last or second to last bar.
         trailMax: i === 2 ? 1 : Infinity,
         firstRunMin: i === 0 ? firstBars : 1,

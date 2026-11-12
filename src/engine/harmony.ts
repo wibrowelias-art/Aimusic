@@ -120,6 +120,18 @@ export function planHarmony(scale: Scale, sections: readonly SectionPlan[], rng:
   const lenA = splitBars(secA.bars, lengths);
   const lenB = splitBars(secB.bars, lengths);
   const lenA2 = splitBars(secA2.bars, lengths);
+  // A' needs three chords to come back the way A began (tonic, then on, then home):
+  // with room for it, a two-chord split is cut once more.
+  if (lenA2.length === 2 && secA2.bars >= 6) {
+    const wide = lenA2[0] >= lenA2[1] ? 0 : 1;
+    if (lenA2[wide] >= 4) {
+      const half = Math.floor(lenA2[wide] / 2);
+      lenA2.splice(wide, 1, half, lenA2[wide] - half);
+    } else {
+      // 3 + 3
+      lenA2.splice(0, 2, 2, 2, 2);
+    }
+  }
   // The closing tonic chord gets the longest span of A'.
   let longest = lenA2.length - 1;
   for (let i = lenA2.length - 1; i >= 0; i--) {
@@ -136,15 +148,22 @@ export function planHarmony(scale: Scale, sections: readonly SectionPlan[], rng:
     degA.push(pickDegree(degA[i - 1], i >= 2 ? degA[i - 2] : -1, [], []));
   }
 
-  // A': the A degrees again, closing on the tonic.
+  // A': the A degrees again, closing on the tonic. With two chords there is no room for
+  // "tonic, on, home", so it comes home from the chord that followed the tonic in A.
   const degA2: number[] = [];
-  for (let i = 0; i < lenA2.length - 1; i++) degA2.push(degA[i % degA.length]);
+  if (lenA2.length === 2 && degA.length >= 2) {
+    degA2.push(degA[1]);
+  } else {
+    for (let i = 0; i < lenA2.length - 1; i++) degA2.push(degA[i % degA.length]);
+  }
   degA2.push(0);
   for (let i = degA2.length - 2; i >= 0; i--) {
     const next = degA2[i + 1];
     const prev = i > 0 ? degA2[i - 1] : -1;
     if (degA2[i] === next || degA2[i] === prev) {
-      degA2[i] = pickDegree(next, -1, prev >= 0 ? [prev] : [], []);
+      // Prefer another chord of A before drawing a new one.
+      const fromA = degA.find((d) => d !== next && d !== prev && d !== 0);
+      degA2[i] = fromA ?? pickDegree(next, -1, prev >= 0 ? [prev] : [], []);
     }
   }
 
