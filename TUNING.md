@@ -357,3 +357,70 @@ What follows from these numbers:
    per-octave steps in `src/analysis/reference.ts`.
 
    Answer:
+
+## 5. Style Lab (music AI + lo-fi chain)
+
+What was added: style families as descriptor prompts (`src/style`), the ElevenLabs Music backend (`server`),
+and the lo-fi chain (`src/postfx`). The piano engine and its numbers above are unchanged.
+
+### Chain stages and what a knob position means (all in `src/postfx/constants.ts`)
+
+| Stage | Knob | Mapping |
+| --- | --- | --- |
+| Input | - | the file is brought to -18 LUFS before the chain, so every knob acts on the same level |
+| Tape | Saturation 0..1 | tanh curve, drive -6 dB (knob just above 0) to +12 dB (knob 1), 4x oversampled |
+| Tape | Wow / flutter 0..1 | at 1: 14 cents at 0.37 Hz + 8 cents at 0.53 Hz + 3 cents at 6.1 Hz (a moving delay) |
+| Tape | Drift 0..1 | at 1: 12 cents at 0.043 Hz + 8 cents at 0.017 Hz |
+| Tape | High-cut 4..16 kHz | 4th order low-pass (24 dB/oct); 16 kHz = bypassed |
+| Room | Room 0..1 + type | small room RT60 0.45 s or hall RT60 4.5 s; wet gain 0.9 at knob 1 (unit-energy impulse responses) |
+| Mic | Bedroom mic 0..1 | at 1: stereo width 25 %, low-cut 90 Hz, +5 dB at 280 Hz, compressor 3.5:1 at -24 dB |
+| Noise | Hiss -60..-45 dB | RMS in dBFS in the finished file; one step lower = off; -45 is the hard ceiling |
+| Slowed | 0..25 % | playback rate 1 - x (pitch and tempo together) plus a hall send of up to 0.6 |
+| Vocals | Vocal blur 0..1 | on the vocal stem only: low-pass 9 kHz -> 2.2 kHz and a hall send of up to 0.8 |
+| Master | - | gain to -16 LUFS, hiss added, look-ahead limiter at -1.5 dBFS, 4x oversampled peak held under -1 dBFS |
+
+### Checks (`tests/postfx`, `tests/analysis/loudness.test.ts`, node-web-audio-api)
+
+- Loudness meter: 1 kHz stereo sine at -23 dBFS reads -23.0 LUFS; 997 Hz mono at full scale reads -3.01; gating
+  cases within 0.1 LU; K-weighting coefficients equal the BS.1770 table at 48 kHz to 6 decimals.
+- Master: noise at -40 / -20 / -6 dBFS RMS all land within 0.5 LU of -16 with the sample peak <= -1.5 dBFS and
+  the oversampled peak <= -1.0 dBFS. A very peaky signal keeps the peak rule and reports the limiter's work.
+- Each stage moves its own number: high-cut 8 kHz puts the band above 14 kHz more than 25 dB down; bedroom mic
+  at 1 lowers side-against-mid by 10 to 14 dB; slowed 20 % gives 0.8x speed, -3.86 semitones, a tone at 1000 Hz
+  measured within 3 cents of 800 Hz; wow / flutter at 1 measures 60 to 115 % of the planned peak deviation
+  (15 to 25 cents); saturation at 1 lifts the third harmonic of a 220 Hz tone from below -70 dB to above -35 dB;
+  hiss at -50 measures -50 dBFS (+-0.5); same input, settings and seed give identical samples.
+
+### The five presets on the built-in test signal (30 s, not music)
+
+Raw test signal: -16.4 LUFS, peak -6.4 dBFS, centroid 500 Hz, side against mid -13.4 dB.
+
+| Preset | LUFS | Peak dBFS | Peak between samples | MP3 192k peak | Centroid Hz | Side dB | Hiss dBFS | High-cut | Speed | Length |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ambient keys + pads | -16.0 | -6.33 | -6.33 | -6.48 | 403 | -9.1 | -56 | 10 kHz | 100 % | 0:30 -> 0:35 |
+| Bedroom demo | -16.0 | -8.78 | -8.74 | -9.09 | 373 | -19.3 | -50 | 9 kHz | 100 % | 0:30 -> 0:31 |
+| Dream-folk vocal | -16.0 | -7.35 | -7.33 | -7.45 | 371 | -12.2 | -56 | 11 kHz | 100 % | 0:30 -> 0:35 |
+| Slowcore guitar | -16.0 | -8.47 | -8.40 | -8.63 | 390 | -15.3 | -52 | 10 kHz | 100 % | 0:30 -> 0:31 |
+| Slowed + reverb | -16.0 | -5.76 | -5.76 | -5.94 | 455 | -4.9 | -54 | 8 kHz | 86 % | 0:30 -> 0:39 |
+
+These numbers say the chain does what its knobs say. They say nothing about real songs: the test signal is
+three tones and noise bursts.
+
+### Known limits
+
+- Nothing has been generated with the real music API yet (no key in the build environment at the time of
+  writing). Request shape, error shape and price come from the public docs and price list, read through
+  web-search excerpts on 2026-11-12. The first real call is the first real test of the client.
+- Stem separation: the endpoint and its ZIP answer are implemented from the docs; its price is not on the
+  API price list. The app assumes half a generation and says so in the confirm dialog.
+- The cost shown is an estimate (length x $0.15 per minute). Rounding rules and plan credits are the provider's.
+- The name guard works on form (quotes, "in the style of", capitals mid-sentence). A name typed in lowercase
+  with no such phrase around it passes the guard; the provider's own filter is the second line there.
+- Compressor and wave shaper are the browser's own nodes: Chromium and node-web-audio-api differ slightly in
+  their curves. The master stage is plain arithmetic and identical everywhere.
+
+### Listening questions for Elias (Style Lab)
+
+The questions for the five test generations go here once they exist (one set of three per family), with
+the measured numbers next to them. Nothing in the chain gets tuned before the answers are written down.
+

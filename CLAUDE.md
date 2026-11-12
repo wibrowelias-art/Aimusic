@@ -1,15 +1,28 @@
-# Ambient Lab – project rules
+# Ambient Lab - project rules
 
-Ambient Lab is a web app that makes calm, sparse, ORIGINAL ambient piano pieces with one
-click (slow, lots of silence, long reverb, a little tape wobble). The owner is Elias.
+Ambient Lab is a web app with two labs. The Style Lab turns a style family (a list of plain
+sound descriptors) into a prompt, gets a new ORIGINAL song from a music AI (ElevenLabs Music
+API) and runs it through a lo-fi post-processing chain. "Ambient piano (offline)" is the
+seeded piano engine: calm, sparse, original piano pieces with one click. The owner is Elias.
 
 ## Hard rules (never break these)
 
 1. **Originality.** Never recreate, transcribe or approximate any existing song's melody,
-   chords or arrangement. No hard-coded melodies or progressions taken from real music, no
-   "in the style of <song>" tables, no reference MIDI. The lab captures a mood and a sound
-   world only. All notes come from a seeded generator. If a user request or a reference file
-   would require copying notes, that part is refused and the UI says so.
+   chords, lyrics, title or arrangement. No hard-coded melodies or progressions taken from
+   real music, no note or chord tables modelled on a song, no reference MIDI. The lab captures
+   a mood and a sound world only. Piano notes come from a seeded generator. If a user request
+   or a reference file would require copying notes, that part is refused and the UI says so.
+   Lyrics are the owner's own, the helper's own frames, or none.
+1b. **No names to the music API.** Only sound descriptors are sent: never an artist name or a
+   song title. `src/style/guard.ts` enforces it on the page and in `src/style/request.ts`
+   (so also on the server). No artist names or titles anywhere in `src/` or `server/`
+   (the research with names lives in `STYLES.md` only).
+1c. **Research is text only.** Never download, stream or analyse the audio of a reference
+   song. Public text only (reviews, interviews, wikis, label pages), sources cited in `STYLES.md`.
+1d. **Money.** Every call to the music API shows its estimated cost first and needs a yes
+   (the server refuses a request without the matching `confirmUsd`). The API key lives in a
+   local `.env` (git-ignored), is read on the Node side only and is never committed or logged.
+   Tests and checks run in mock mode; they never call the API.
 2. **Assets.** No copyrighted audio in the repo. Every sample, impulse response, font and
    icon set is listed in `ASSETS.md` with source and licence (prefer CC0 / CC BY). Do not add
    an asset without adding it there. Reverb IRs, noise, rain and pad are synthesised in code.
@@ -27,9 +40,14 @@ click (slow, lots of silence, long reverb, a little tape wobble). The owner is E
 - Vite + TypeScript (strict), Web Audio API, Vitest. No UI framework: plain TS + DOM.
 - UI: dark minimal, own palette, Inter font (`@fontsource-variable/inter`), lucide icons (`lucide`).
 - Contracts live in `src/engine/types.ts`, `src/engine/params.ts`, `src/audio/types.ts`,
-  `src/analysis/types.ts`, `src/analysis/targets.ts`. Read them before writing code. Do not
-  change a contract without saying so in your report.
-- Engine code (`src/engine`, `src/analysis`, pure parts of `src/audio`) must be deterministic:
+  `src/analysis/types.ts`, `src/analysis/targets.ts`, `src/style/types.ts`, `src/style/take.ts`,
+  `src/postfx/settings.ts`. Read them before writing code. Do not change a contract without
+  saying so in your report.
+- Style Lab: `src/style` (profiles, prompt, guard, cost, lyrics, request body; pure),
+  `src/postfx` (lo-fi chain; knob mappings in `constants.ts`), `server` (local backend mounted
+  by `vite.config.ts` on `/api/style`; generations are stored in `renders/style`, git-ignored).
+  `vite.config.ts` must not import local files (it loads `server/plugin.ts` through Vite).
+- Engine code (`src/engine`, `src/analysis`, `src/style`, pure parts of `src/audio` and `src/postfx`) must be deterministic:
   no `Math.random()`, no `Date.now()`. All randomness comes from the seeded RNG.
 - Audio code takes its `BaseAudioContext` / context factory as a parameter so the same code
   runs in the browser and under `node-web-audio-api` in tests. Never touch `window` in engine code.

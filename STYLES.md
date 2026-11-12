@@ -431,7 +431,7 @@ from your own note and not from a source, it says so - those are your taste, kep
   playback rate; the practice in general is "slow the whole thing down, then add reverb".
 - From your note (not in sources): deep, blurry, reverb-heavy.
 - Instruments are not documented for either track, so the prompt stays generic: soft
-  sustained pads, a slow drone, distant bell-like tones, deep soft bass, little or no drums.
+  sustained pads, a slow drone, distant bell-like tones, deep soft bass, at most a faint slow pulse.
 - Tempo: 84-100 BPM as generated; the chain then slows it by 14 % (to about 72-86).
 - Chain preset: slowed 14 % (pitch down about 2.6 semitones) with the extra hall send, big
   hall on top, high-cut 8 kHz, hiss -54 dB.

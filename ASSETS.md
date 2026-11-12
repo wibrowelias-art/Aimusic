@@ -49,3 +49,15 @@ not uploaded, not saved and not used as sound material.
 
 All notes are generated from a seed by the code in `src/engine`. The repo contains
 no transcriptions, no MIDI files of existing music and no reference recordings.
+
+## Style Lab
+
+- Generated songs: made by the ElevenLabs Music API under the owner's account. They are stored in
+  `renders/style` on the owner's computer (git-ignored) and are never committed. What may be done with them
+  (for example commercial use) follows the plan and terms of that account, not this repo.
+- Lo-fi chain: no recorded material. The small-room impulse response (`src/postfx/room.ts`), the hall
+  (`src/audio/reverb.ts`) and the hiss / room tone (`src/postfx/hiss.ts`) are synthesised in code from seeded noise.
+- Mock mode: the test signal (`server/mock.ts`) is three sine tones and noise bursts made in code.
+- Reference tracks named in `STYLES.md`: no audio of them was downloaded, analysed or stored. The file holds
+  public facts and attributed descriptions only.
+- Lyrics helper: the sentence frames in `src/style/lyrics.ts` were written for this project.

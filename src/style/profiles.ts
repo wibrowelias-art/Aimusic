@@ -131,7 +131,7 @@ export const PROFILES: Record<FamilyId, StyleProfile> = {
       'a slowly evolving drone',
       'distant bell-like or plucked tones',
       'deep soft bass',
-      'a faint slow pulse or no drums at all',
+      'at most a faint slow pulse',
     ],
     vocal: 'distant, wordless, heavily blurred voice far back in the mix',
     vocalsDefault: false,
