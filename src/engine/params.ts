@@ -183,6 +183,32 @@ export const PRESETS: Record<PresetName, Preset> = {
 
 export const PRESET_NAMES = Object.keys(PRESETS) as PresetName[];
 
+/** The mode with the highest weight in a preset. */
+export function presetMainMode(name: PresetName): Mode {
+  const modes = PRESETS[name].modes;
+  let best: Mode = DEFAULT_PARAMS.mode;
+  let bestWeight = -Infinity;
+  for (const mode of Object.keys(MODE_INTERVALS) as Mode[]) {
+    const w = modes[mode] ?? 0;
+    if (w > bestWeight) {
+      best = mode;
+      bestWeight = w;
+    }
+  }
+  return best;
+}
+
+/** The middle of every range of a preset (plus its main mode) as valid, snapped Params. */
+export function presetCenter(name: PresetName, base: Partial<Params> = {}): Params {
+  const preset = PRESETS[name];
+  const out: Partial<Params> = { ...base, mode: base.mode ?? presetMainMode(name) };
+  for (const k of NUMERIC_KEYS) {
+    const r = preset.ranges[k];
+    out[k] = (r.lo + r.hi) / 2;
+  }
+  return normalizeParams(out);
+}
+
 export function paramLabel(key: NumericParamKey, value: number): string {
   const spec = PARAM_SPECS[key];
   switch (key) {
