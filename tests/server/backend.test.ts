@@ -8,12 +8,13 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildComposeBody, compose, planFromLyrics, StyleApiError } from '../../server/elevenlabs';
+import { compose } from '../../server/elevenlabs';
 import { createStyleLabHandler } from '../../server/plugin';
 import { unzip } from '../../server/unzip';
 import { POSTFX_CLEAN } from '../../src/postfx/settings';
 import { estimateCost } from '../../src/style/cost';
 import { buildPrompt } from '../../src/style/prompt';
+import { buildComposeBody, planFromLyrics, StyleApiError } from '../../src/style/request';
 import type { ComposeRequestBody, StyleTake } from '../../src/style/take';
 import { makeZip } from '../../src/ui/zip';
 

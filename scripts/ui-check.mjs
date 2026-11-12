@@ -2,9 +2,12 @@
 /**
  * `npm run check:ui`
  *
- * Drives the real app in headless Chromium: Generate, Again, a knob, rating,
- * favorites, waveform render, MIDI / WAV / stems export, reload, history, seek,
- * keyboard shortcuts. Fails on any console error. Screenshots go to reports/tmp/.
+ * Drives the real app in headless Chromium. First the Style Lab in mock mode (no call
+ * to the music API, nothing billed): profiles, mix, own words, the name guard, lyrics,
+ * cost confirmation, the lo-fi chain and its numbers. Then the offline piano lab:
+ * Generate, Again, a knob, rating, favorites, waveform render, MIDI / WAV / stems export,
+ * reload, history, seek, keyboard shortcuts. Fails on any console error. Screenshots go
+ * to reports/tmp/.
  */
 import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -21,6 +24,9 @@ const check = (ok, message) => {
 };
 
 mkdirSync('reports/tmp', { recursive: true });
+// The Style Lab backend in mock mode, whatever is in .env: this check can never spend money.
+process.env.STYLE_LAB_MOCK = '1';
+process.env.ELEVENLABS_API_KEY = '';
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
 await server.listen();
 const url = `http://127.0.0.1:${server.httpServer.address().port}/`;
@@ -48,7 +54,135 @@ const download = async (selector) => {
 
 try {
   await page.goto(url);
+
+  // ---------------------------------------------------------------- Style Lab (mock mode)
+  {
+  await page.waitForSelector('.sl-generate');
+  const api = (route, init) => page.evaluate(async ([r, i]) => (await fetch(`/api/style/${r}`, i)).json(), [route, init]);
+  const prompt = () => page.inputValue('.sl-prompt-text');
+  const metric = async (label) =>
+    page.evaluate((l) => [...document.querySelectorAll('.sl-metrics tr')].find((tr) => tr.firstElementChild?.textContent === l)?.children[1]?.textContent ?? '', label);
+  const chainDone = () =>
+    page.waitForFunction(() => document.querySelector('.sl-metrics tr') !== null && document.querySelector('.sl-chain-status')?.textContent === '', undefined, { timeout: 180_000 });
+  const takesBefore = (await api('takes')).map((t) => t.id);
+
+  check((await page.locator('.profile').count()) === 6, 'six profiles: five families and the offline piano');
+  check((await page.getAttribute('.profile[data-profile="bedroom-demo"]', 'aria-checked')) === 'true', 'starts on a Style Lab family');
+  check(((await text('.sl-banner')) ?? '').includes('Mock mode'), 'the page says when mock mode is on');
+  check((await prompt()).includes('Vocals: none. Instrumental only'), 'the prompt text is shown and says instrumental');
+  check(!(await page.isDisabled('.sl-generate')), 'Generate is ready');
+
+  await page.fill('.sl-words input', 'more tape hiss, no drums');
+  let p = await prompt();
+  check(p.endsWith('Also: more tape hiss.') && /Avoid: .*drums/.test(p) && !p.includes('drum machine'), 'own words: "more tape hiss" is appended, "no drums" removes the drum machine and joins Avoid');
+
+  await page.selectOption('.sl-recipe select >> nth=0', 'slowcore');
+  await page.fill('.sl-mix input', '50');
+  p = await prompt();
+  check(p.startsWith('An even blend of') && p.includes('woozy clean electric guitar'), 'mixing two profiles 50/50 rewrites the prompt');
+  check(((await text('.sl-mix-text')) ?? '') === '50% Bedroom demo + 50% Slowcore guitar', 'the mix is spelled out');
+
+  // The name guard
+  await page.fill('.sl-prompt-text', `${p}\nMake it sound like Xavier Quillfeather.`);
+  check(await page.isVisible('.sl-guard'), 'a name in the prompt is flagged');
+  check(await page.isDisabled('.sl-generate'), 'Generate is blocked while a name is in the prompt');
+  check(((await text('.sl-request')) ?? '').startsWith('Nothing would be sent'), 'the request preview says nothing would be sent');
+  await page.click('.sl-prompt-head .btn');
+  check(!(await page.isVisible('.sl-guard')) && !(await page.isDisabled('.sl-generate')), '"Rebuild from settings" clears it');
+
+  // Vocals and the lyrics helper
+  await page.check('.sl-switch');
+  check((await prompt()).includes('Vocals: quiet, plain solo voice'), 'the vocals switch changes the vocal line');
+  await page.fill('.sl-lyrics .sl-input', 'the bus stop, cold coffee');
+  await page.click('.sl-lyrics .btn');
+  const lyrics = await page.inputValue('.sl-lyrics-text');
+  check(lyrics.includes('the bus stop') && lyrics.includes('cold coffee') && lyrics.includes('[verse 1]'), 'the lyrics helper drafts lines around the topic words');
+  check(((await text('.sl-request')) ?? '').includes('"composition_plan"'), 'own lyrics go out as a section plan');
+  await page.fill('.sl-lyrics-text', '');
+  await page.uncheck('.sl-switch');
+  await page.selectOption('.sl-recipe select >> nth=0', '');
+
+  // What a real (billed) run would show: fake only the status answer, then cancel.
+  await page.route('**/api/style/status', (route) =>
+    route.fulfill({ json: { keyPresent: true, mock: false, usdPerMinute: 0.15, models: ['music_v1'], defaultModel: 'music_v1' } }),
+  );
+  await page.reload();
+  await page.waitForSelector('.sl-generate:not([disabled])');
+  check(((await text('.sl-cost')) ?? '').includes('About $0.23'), `the cost estimate is on the page before anything happens: ${await text('.sl-cost')}`);
+  await page.click('.sl-generate');
+  const confirmText = (await text('dialog[open]')) ?? '';
+  check(confirmText.includes('billed to your account') && confirmText.includes('Estimated total') && confirmText.includes('$0.23'), 'Generate asks to confirm the cost first');
+  check(confirmText.includes('"prompt"'), 'the confirm dialog shows what is sent');
+  await page.screenshot({ path: 'reports/tmp/ui-s1-confirm.png' });
+  await page.click('dialog[open] .btn.ghost');
+  check(JSON.stringify((await api('takes')).map((t) => t.id)) === JSON.stringify(takesBefore), 'cancelling sends nothing');
+  await page.unroute('**/api/style/status');
+  await page.reload();
+  await page.waitForSelector('.sl-generate:not([disabled])');
+
+  // Generate (mock): test signal, then the chain
+  await page.fill('.sl-length input', '20');
+  await page.click('.sl-generate');
+  check(((await text('dialog[open]')) ?? '').includes('Mock mode'), 'in mock mode the dialog says nothing is billed');
+  await page.click('.sl-confirm-ok');
+  await chainDone();
+  const made = (await api('takes')).filter((t) => !takesBefore.includes(t.id));
+  check(made.length === 1 && made[0].mock === true && made[0].costUsd === 0 && made[0].lengthSec === 20, 'one generation is stored with its request and cost');
+  const lufs = Number.parseFloat(await metric('Loudness'));
+  const peak = Number.parseFloat(await metric('Peak'));
+  check(Math.abs(lufs + 16) <= 0.5, `lo-fi loudness ${lufs} LUFS (target -16)`);
+  check(peak < -1, `lo-fi peak ${peak} dBFS is below -1`);
+  check((await metric('Hiss')).startsWith('-50 dBFS'), `hiss sits where the knob says: ${await metric('Hiss')}`);
+  check(((await page.getAttribute('.sl-audio >> nth=0', 'src')) ?? '').startsWith('blob:'), 'the lo-fi player has audio');
+  await page.screenshot({ path: 'reports/tmp/ui-s2-result.png', fullPage: true });
+
+  // Another profile's preset on the same take: slowed
+  await page.click('.profile[data-profile="slowed-reverb"]');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sl-metrics td')].some((td) => td.textContent === '86% speed'), undefined, { timeout: 180_000 });
+  await chainDone();
+  check((await metric('Speed and pitch')) === '86% speed', 'the slowed preset plays the take at 86% speed');
+  check(Math.abs(Number.parseFloat(await metric('Loudness')) + 16) <= 0.5 && Number.parseFloat(await metric('Peak')) < -1, 'still on target after slowing');
+
+  // A knob re-renders for free
+  await page.focus('[role="slider"][aria-label="Hiss"]');
+  await page.keyboard.press('ArrowUp');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sl-metrics td')].some((td) => td.textContent === '-53 dBFS RMS'), undefined, { timeout: 180_000 });
+  check(true, 'turning the hiss knob renders the chain again (-54 -> -53 dBFS)');
+
+  // Stems (mock) switch the vocal blur on
+  await page.click('.sl-actions .btn >> nth=2');
+  await page.click('.sl-confirm-ok');
+  await page.waitForFunction(() => [...document.querySelectorAll('.sl-metrics td')].some((td) => td.textContent === 'on the vocal stem'), undefined, { timeout: 180_000 });
+  check(true, 'with stems the vocal blur acts on the vocal stem');
+  await page.click('.sl-actions .btn >> nth=3');
+  await page.waitForFunction(() => document.querySelector('.sl-actions .btn:nth-of-type(3)')?.getAttribute('aria-pressed') === 'true' || [...document.querySelectorAll('.sl-actions .btn')].some((b) => b.getAttribute('aria-pressed') === 'true'));
+  check((await api('takes')).find((t) => t.id === made[0].id)?.rating === 1, 'thumbs up is stored with the take');
+
+  const lofi = await download('.sl-actions .btn >> nth=0');
+  let lofiPeak = 0;
+  for (let i = 44; i + 1 < lofi.bytes.length; i += 2) lofiPeak = Math.max(lofiPeak, Math.abs(lofi.bytes.readInt16LE(i)));
+  const lofiPeakDb = 20 * Math.log10(lofiPeak / 32768);
+  check(lofi.name.endsWith('-lofi.wav') && lofi.bytes.readUInt32LE(24) === 48000 && lofi.bytes.readUInt16LE(22) === 2, `lo-fi WAV export (${lofi.name})`);
+  check(lofiPeakDb < -1, `exported lo-fi WAV peaks at ${lofiPeakDb.toFixed(2)} dBFS`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+  const slOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(slOverflow <= 1, `Style Lab: no sideways scrolling at 390 px (overflow ${slOverflow} px)`);
+  await page.screenshot({ path: 'reports/tmp/ui-s3-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  // Clean up the test generation (files included)
+  page.once('dialog', (d) => void d.accept());
+  await page.click('.sl-take.is-current .btn');
+  await page.waitForFunction((n) => document.querySelectorAll('.sl-take').length === n, takesBefore.length);
+  check(JSON.stringify((await api('takes')).map((t) => t.id)) === JSON.stringify(takesBefore), 'deleting a generation removes it');
+  }
+
+  // ---------------------------------------------------------------- Ambient piano (offline)
+  await page.click('.profile[data-profile="piano-offline"]');
   await page.waitForSelector('.generate');
+  check(!(await page.isVisible('.sl-generate')), 'the offline piano profile swaps the Style Lab for the piano lab');
   check((await text('.take-title')) === 'No take yet', 'starts without a take');
   check(await page.isDisabled('.exports .btn >> nth=0'), 'exports are disabled without a take');
   await page.screenshot({ path: 'reports/tmp/ui-0-empty.png' });
@@ -290,7 +424,7 @@ try {
   // About dialog
   await page.click('.topbar .btn');
   check(await page.isVisible('dialog[open]'), 'About dialog opens');
-  check(((await text('dialog')) ?? '').includes('CC BY 3.0'), 'About shows the sample credit');
+  check(((await text('dialog[open]')) ?? '').includes('CC BY 3.0'), 'About shows the sample credit');
   await page.screenshot({ path: 'reports/tmp/ui-4-about.png' });
   await page.keyboard.press('Escape');
 

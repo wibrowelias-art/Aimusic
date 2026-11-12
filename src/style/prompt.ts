@@ -37,6 +37,23 @@ function headNoun(item: string): string {
   return (words[words.length - 1] ?? '').replace(/s$/, '');
 }
 
+/**
+ * The owner's words, sorted: "no drums" / "without drums" are things to leave out (they
+ * take matching instruments off the list and join the avoid line); the rest is passed on.
+ */
+export function splitWords(words: string): { remove: string[]; rest: string[] } {
+  const remove: string[] = [];
+  const rest: string[] = [];
+  for (const raw of words.split(/[,;\n]+/)) {
+    const clause = raw.trim().replace(/\s+/g, ' ').replace(/[.\s]+$/, '');
+    if (!clause) continue;
+    const no = /^(?:no|without|remove|drop|lose)(?:\s+(?:the|any|all))?\s+(.+)$/i.exec(clause);
+    if (no) remove.push(no[1]);
+    else rest.push(clause);
+  }
+  return { remove, rest };
+}
+
 export interface Blend {
   /** The profile with the bigger share. */
   lead: StyleProfile;
@@ -79,21 +96,25 @@ export function buildPrompt(req: StyleRequest): string {
   const list = (pick: (p: StyleProfile) => readonly string[]): string[] =>
     unique([...take(pick(lead), other ? Math.max(0.5, leadShare) : 1), ...(other ? take(pick(other), otherShare) : [])]);
 
-  const instruments = list((p) => p.instruments);
+  const { remove, rest } = splitWords(req.words);
+  const kept = (items: string[]): string[] => items.filter((item) => !remove.some((term) => item.toLowerCase().includes(headNoun(term))));
+  const instruments = kept(list((p) => p.instruments));
   const lines: string[] = [firstLine(blend)];
   lines.push(`Genre: ${list((p) => p.genre).join(', ')}.`);
-  lines.push(`Instruments: ${instruments.join(', ')}.`);
+  if (instruments.length > 0) lines.push(`Instruments: ${instruments.join(', ')}.`);
   lines.push(req.vocals ? `Vocals: ${lead.vocal}.` : 'Vocals: none. Instrumental only, no singing, no spoken words.');
   lines.push(`Tempo: ${lead.tempoFeel}, around ${blend.tempoBpm[0]}-${blend.tempoBpm[1]} BPM.`);
-  lines.push(`Production: ${list((p) => p.production).join(', ')}.`);
+  lines.push(`Production: ${kept(list((p) => p.production)).join(', ')}.`);
   lines.push(`Mood: ${list((p) => p.mood).join(', ')}.`);
   lines.push(`Structure: ${lead.structure}.`);
   // Do not ask to avoid something the blend just asked for.
   const wanted = instruments.join(' ').toLowerCase();
-  const avoid = lead.avoid.filter((item) => !wanted.includes(headNoun(item)) && !(req.vocals && /vocal|sing/i.test(item)));
+  const avoid = unique([
+    ...lead.avoid.filter((item) => !wanted.includes(headNoun(item)) && !(req.vocals && /vocal|sing/i.test(item))),
+    ...remove,
+  ]);
   if (avoid.length > 0) lines.push(`Avoid: ${avoid.join(', ')}.`);
-  const words = req.words.trim().replace(/\s+/g, ' ');
-  if (words) lines.push(`Also: ${words.replace(/[.\s]+$/, '')}.`);
+  if (rest.length > 0) lines.push(`Also: ${rest.join(', ')}.`);
   return lines.join('\n');
 }
 

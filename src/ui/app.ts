@@ -121,8 +121,15 @@ const CREDITS = [
   '',
 ].join('\n');
 
+export interface AppOptions {
+  /** True when a shell around the app brings the top bar (brand, About). */
+  embedded?: boolean;
+}
+
 export class App {
   private readonly kv: KeyValueStore;
+  private readonly rootEl: HTMLElement;
+  private readonly embedded: boolean;
   private readonly store: TakeStore;
   private prefs: UiPrefs;
   private current: Take | null = null;
@@ -162,8 +169,10 @@ export class App {
     extras: HTMLElement;
   };
 
-  constructor(root: HTMLElement, kv: KeyValueStore = browserStore()) {
+  constructor(root: HTMLElement, kv: KeyValueStore = browserStore(), opts: AppOptions = {}) {
     this.kv = kv;
+    this.rootEl = root;
+    this.embedded = opts.embedded === true;
     this.store = new TakeStore(kv);
     this.prefs = this.loadPrefs();
     this.els = this.build(root);
@@ -337,19 +346,20 @@ export class App {
 
     const app = h(
       'div',
-      { class: 'app' },
-      h(
-        'header',
-        { class: 'topbar' },
-        h('div', { class: 'brand' }, brandMark(), h('span', null, 'Ambient Lab')),
-        h('div', { class: 'topbar-note' }, 'Calm piano from a seed. Every piece is new, nothing is copied.'),
+      { class: this.embedded ? 'app embedded' : 'app' },
+      !this.embedded &&
         h(
-          'button',
-          { class: 'btn ghost', type: 'button', onclick: () => about.showModal() },
-          icon(Info, 15),
-          'About',
+          'header',
+          { class: 'topbar' },
+          h('div', { class: 'brand' }, brandMark(), h('span', null, 'Ambient Lab')),
+          h('div', { class: 'topbar-note' }, 'Calm piano from a seed. Every piece is new, nothing is copied.'),
+          h(
+            'button',
+            { class: 'btn ghost', type: 'button', onclick: () => about.showModal() },
+            icon(Info, 15),
+            'About',
+          ),
         ),
-      ),
       h(
         'main',
         { class: 'layout' },
@@ -513,6 +523,16 @@ export class App {
   }
 
   // ------------------------------------------------------------------ state access for add-ons
+
+  /** Opens the About dialog of the piano lab. */
+  openAbout(): void {
+    this.els.about.showModal();
+  }
+
+  /** Stops playback (the shell calls this when another view takes over). */
+  pause(): void {
+    this.stopPlayback();
+  }
 
   getPreset(): PresetName {
     return this.prefs.preset;
@@ -1149,6 +1169,8 @@ export class App {
 
   private onKey(e: KeyboardEvent): void {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+    // Hidden behind another view of the shell: the shortcuts are not ours.
+    if (this.rootEl.hidden || this.rootEl.closest('[hidden]')) return;
     const target = e.target as HTMLElement | null;
     if (target) {
       const tag = target.tagName;
@@ -1170,7 +1192,7 @@ export class App {
   }
 }
 
-function brandMark(): SVGElement {
+export function brandMark(): SVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 26 26');
@@ -1189,6 +1211,6 @@ function brandMark(): SVGElement {
   return svg;
 }
 
-export function mountApp(root: HTMLElement): App {
-  return new App(root);
+export function mountApp(root: HTMLElement, opts: AppOptions = {}): App {
+  return new App(root, browserStore(), opts);
 }

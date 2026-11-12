@@ -19,7 +19,9 @@ export interface KnobOptions {
   /** Fires when a change is finished (pointer released, key pressed). */
   onChange: (value: number) => void;
   /** Fires when the pin button is pressed. */
-  onPinToggle: (pinned: boolean) => void;
+  onPinToggle?: (pinned: boolean) => void;
+  /** False: no pin button (a knob that is always just a value). Default true. */
+  pinnable?: boolean;
   title?: string;
 }
 
@@ -90,7 +92,7 @@ export class Knob {
       'aria-pressed': 'false',
       onclick: () => {
         this.setPinned(!this.pinned);
-        this.opts.onPinToggle(this.pinned);
+        this.opts.onPinToggle?.(this.pinned);
       },
     });
     this.element = h(
@@ -99,7 +101,7 @@ export class Knob {
       this.dial,
       h('div', { class: 'knob-label' }, opts.label),
       this.valueText,
-      this.pinButton,
+      opts.pinnable === false ? null : this.pinButton,
     );
 
     this.dial.addEventListener('pointerdown', (e) => this.onPointerDown(e));

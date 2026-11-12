@@ -217,8 +217,10 @@ export function paramLabel(key: NumericParamKey, value: number): string {
     case 'density':
       return `${value.toFixed(1)} notes/bar`;
     case 'register': {
-      const octave = Math.floor(value / 12) - 1;
-      return `${KEY_NAMES[((value % 12) + 12) % 12]}${octave}`;
+      // Learned ranges land between notes: name the nearest one.
+      const midi = Math.round(value);
+      const octave = Math.floor(midi / 12) - 1;
+      return `${KEY_NAMES[((midi % 12) + 12) % 12]}${octave}`;
     }
     case 'restProbability':
       // The share of silent bars itself, not the position of the knob.

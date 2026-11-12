@@ -4,7 +4,7 @@ import { estimateCost, formatUsd } from '../../src/style/cost';
 import { checkDescriptors } from '../../src/style/guard';
 import { draftLyrics, draftLyricSections, parseLyrics, parseTopics } from '../../src/style/lyrics';
 import { FAMILY_IDS, PROFILES } from '../../src/style/profiles';
-import { blendOf, buildPrompt, splitPrompt } from '../../src/style/prompt';
+import { blendOf, buildPrompt, splitPrompt, splitWords } from '../../src/style/prompt';
 import type { StyleRequest } from '../../src/style/types';
 
 const req = (over: Partial<StyleRequest>): StyleRequest => ({ a: 'bedroom-demo', b: null, mix: 0, words: '', vocals: false, lengthSec: 90, ...over });
@@ -47,10 +47,17 @@ describe('buildPrompt', () => {
     expect(sung).not.toContain('Instrumental only');
   });
 
-  it("appends the owner's words", () => {
+  it("appends the owner's words, and takes out what they say no to", () => {
     const text = buildPrompt(req({ words: '  more tape hiss,   no drums. ' }));
-    expect(text.split('\n').at(-1)).toBe('Also: more tape hiss, no drums.');
+    expect(text.split('\n').at(-1)).toBe('Also: more tape hiss.');
+    expect(splitPrompt(text).avoid).toContain('drums');
+    expect(text).not.toContain('drum machine');
+    expect(buildPrompt(req({ words: '' }))).toContain('drum machine');
     expect(buildPrompt(req({ words: '   ' }))).not.toContain('Also:');
+    expect(splitWords('without the guitar; remove any hiss, slower')).toEqual({ remove: ['guitar', 'hiss'], rest: ['slower'] });
+    const noHiss = buildPrompt(req({ words: 'no hiss' }));
+    expect(noHiss).not.toContain('audible tape hiss');
+    expect(splitPrompt(noHiss).avoid).toContain('hiss');
   });
 
   it('mixes two profiles by share', () => {

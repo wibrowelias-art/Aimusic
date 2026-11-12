@@ -24,7 +24,8 @@ import { estimateCost, MUSIC_USD_PER_MINUTE } from '../src/style/cost';
 import { FAMILY_IDS } from '../src/style/profiles';
 import type { ApiErrorBody, ComposeRequestBody, StyleStatus, StyleTake } from '../src/style/take';
 import type { FamilyId } from '../src/style/types';
-import { buildComposeBody, compose, DEFAULT_MODEL, MODELS, separateStems, StyleApiError } from './elevenlabs';
+import { buildComposeBody, DEFAULT_MODEL, MODELS, StyleApiError } from '../src/style/request';
+import { compose, separateStems } from './elevenlabs';
 import { mockAudio } from './mock';
 import { unzip } from './unzip';
 

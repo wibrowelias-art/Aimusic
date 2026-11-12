@@ -1,6 +1,6 @@
 import '@fontsource-variable/inter';
 import './ui/styles.css';
-import { mountApp } from './ui/app';
+import { mountShell } from './ui/shell';
 
 const root = document.querySelector<HTMLElement>('#app');
-if (root) mountApp(root);
+if (root) mountShell(root);
