@@ -875,6 +875,95 @@ button:disabled {
   color: var(--warm);
 }
 
+/* Reference */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.drop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface-sunk);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.drop.is-over {
+  border-color: var(--accent);
+  background: rgba(143, 211, 182, 0.06);
+  color: var(--text);
+}
+
+.drop strong {
+  color: var(--text);
+  font-weight: 560;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.reference-result:not(:empty) {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.reference-result.is-busy .icon {
+  animation: spin 1s linear infinite;
+  vertical-align: -2px;
+}
+
+.reference-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.reference-table th {
+  text-align: left;
+  font-weight: 560;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 0 10px 6px 0;
+}
+
+.reference-table td {
+  padding: 5px 10px 5px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.reference-table td:first-child {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.reference-table td:last-child {
+  color: var(--accent);
+}
+
+.reference-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* Toast */
 .toast {
   position: fixed;

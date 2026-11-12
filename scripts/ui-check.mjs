@@ -214,6 +214,58 @@ try {
   await page.waitForTimeout(200);
   if ((await page.getAttribute('.hero-side .btn.icon-only', 'aria-pressed')) === 'true') await page.keyboard.press('Space');
 
+  // Reference: a made-up track (plucked tones, 60 BPM, D minor) is read for general traits only
+  {
+    const sr = 22050;
+    const seconds = 30;
+    const pcm = new Float32Array(sr * seconds);
+    const scale = [0, 2, 3, 5, 7, 8, 10];
+    let x = 12345;
+    const rand = () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
+    for (let t = 0.2; t < seconds - 2; t += 1) {
+      const pool = [0, 0, 0, 0, 7, 7, 7, 3, 3, ...scale];
+      const midi = 50 + pool[Math.floor(rand() * pool.length)] + (rand() < 0.5 ? 0 : 12);
+      const hz = 440 * 2 ** ((midi - 69) / 12);
+      const start = Math.round(t * sr);
+      for (let i = start; i < Math.min(pcm.length, start + sr); i++) {
+        const u = (i - start) / sr;
+        pcm[i] += 0.2 * Math.min(1, u / 0.004) * Math.exp(-4 * u) * (Math.sin(2 * Math.PI * hz * u) + 0.25 * Math.sin(4 * Math.PI * hz * u));
+      }
+    }
+    const wavBytes = Buffer.alloc(44 + pcm.length * 2);
+    wavBytes.write('RIFF', 0);
+    wavBytes.writeUInt32LE(36 + pcm.length * 2, 4);
+    wavBytes.write('WAVEfmt ', 8);
+    wavBytes.writeUInt32LE(16, 16);
+    wavBytes.writeUInt16LE(1, 20);
+    wavBytes.writeUInt16LE(1, 22);
+    wavBytes.writeUInt32LE(sr, 24);
+    wavBytes.writeUInt32LE(sr * 2, 28);
+    wavBytes.writeUInt16LE(2, 32);
+    wavBytes.writeUInt16LE(16, 34);
+    wavBytes.write('data', 36);
+    wavBytes.writeUInt32LE(pcm.length * 2, 40);
+    for (let i = 0; i < pcm.length; i++) wavBytes.writeInt16LE(Math.round(Math.max(-1, Math.min(1, pcm[i])) * 32767), 44 + i * 2);
+    const before = (await stored()).takes[0].params;
+    await page.setInputFiles('.reference input[type="file"]', { name: 'my-own-sketch.wav', mimeType: 'audio/wav', buffer: wavBytes });
+    await page.waitForSelector('.reference-table', { timeout: 60_000 });
+    const table = ((await text('.reference-table')) ?? '').replace(/\s+/g, ' ');
+    check(table.includes('Tempo') && table.includes('60 BPM'), `reference: reads the tempo of a 60 BPM test track: ${table.slice(0, 160)}`);
+    check(table.includes('Key') && table.includes('Note density') && table.includes('Brightness') && table.includes('Reverb length'), 'reference: shows exactly the five traits');
+    check(((await text('.reference')) ?? '').includes('No melody, no chords and no notes are read or kept'), 'reference: the UI says what is read and what is not');
+    await page.screenshot({ path: 'reports/tmp/ui-8-reference.png', fullPage: true });
+    await page.click('.reference-actions .btn >> nth=0');
+    await page.waitForTimeout(500);
+    data = await stored();
+    check(data.takes[0].params.tempo === 60, `reference: "Use these settings" sets the tempo knob (${before.tempo} -> ${data.takes[0].params.tempo})`);
+    check(data.takes[0].params.seed === before.seed, 'reference: the seed is untouched (no notes come from the file)');
+    const keys = await page.evaluate(() => Object.keys(localStorage));
+    const all = await page.evaluate(() => JSON.stringify(Object.values(localStorage)));
+    check(keys.every((k) => k.startsWith('ambientlab.')) && !all.includes('my-own-sketch'), 'reference: nothing about the file is stored');
+    await page.locator('.topbar').click({ position: { x: 300, y: 10 } });
+    if ((await page.getAttribute('.hero-side .btn.icon-only', 'aria-pressed')) === 'true') await page.keyboard.press('Space');
+  }
+
   // Mood change lets go of the pins
   await page.click('.mood >> nth=3');
   await page.keyboard.press('g');

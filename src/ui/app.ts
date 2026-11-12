@@ -49,6 +49,7 @@ import { TakeStore, type Take, type TakeOrigin } from '../store/takes';
 import { ChatBox } from './chat';
 import { clear, downloadBytes, formatTime, h, icon } from './dom';
 import { Knob } from './knob';
+import { ReferenceBox } from './reference';
 import { PianoRoll, Waveform } from './views';
 import { makeZip } from './zip';
 
@@ -169,7 +170,7 @@ export class App {
     this.roll.onSeek = (sec) => this.seek(sec);
     this.wave.onSeek = (sec) => this.seek(sec);
     document.addEventListener('keydown', (e) => this.onKey(e));
-    this.els.extras.append(new ChatBox(this).element);
+    this.els.extras.append(new ChatBox(this).element, new ReferenceBox(this).element);
 
     this.refreshMoods();
     this.refreshKnobs();
