@@ -141,8 +141,18 @@ export interface Piece {
   pad: PadNote[];
   /** Sustain pedal, sorted by time, starts with a `down`, ends with an `up`. */
   pedal: PedalEvent[];
-  /** Performed time of every bar line in seconds; length = bars + 1. */
+  /**
+   * Tempo map with rubato: performed time of every beat in seconds, length = bars * 4 + 1.
+   * A score position between two beats maps to time by linear interpolation.
+   */
+  beatTimes: number[];
+  /** Performed time of every bar line in seconds; length = bars + 1 (barTimes[i] = beatTimes[4 * i]). */
   barTimes: number[];
+  /**
+   * Half-width of the per-note timing humanisation in milliseconds, 15..40.
+   * For every note: |note.time - scoreTime(note.startBeat)| <= humanizeMs / 1000.
+   */
+  humanizeMs: number;
   /** Performed time at which the last piano key / pedal / pad note is released. */
   durationSec: number;
 }
