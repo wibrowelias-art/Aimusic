@@ -39,7 +39,7 @@ import { checkDescriptors, GUARD_RULE } from '../style/guard';
 import { draftLyrics, parseTopics } from '../style/lyrics';
 import { FAMILY_IDS, PROFILES } from '../style/profiles';
 import { blendOf, buildPrompt } from '../style/prompt';
-import { buildComposeBody, DEFAULT_MODEL, MODELS, PLAN_MODEL, StyleApiError } from '../style/request';
+import { buildComposeBody, DEFAULT_MODEL, MODELS, StyleApiError } from '../style/request';
 import type { ApiErrorBody, ComposeRequestBody, StyleStatus, StyleTake } from '../style/take';
 import { LENGTH_MAX_SEC, LENGTH_MIN_SEC, LENGTH_STEP_SEC, type FamilyId, type StyleRequest } from '../style/types';
 import { clear, downloadBytes, h, icon } from './dom';
@@ -751,7 +751,7 @@ export class StyleLab {
       els.requestPre.textContent = `Nothing would be sent: ${requestError}`;
     }
     els.lyricsNote.textContent = usesPlan
-      ? `With your own lyrics the request goes out as a section plan on ${PLAN_MODEL} (the model that takes plans), whatever is picked under Model.`
+      ? 'With your own lyrics the request goes out as a plan: an intro without words, one part per block of lines, an outro. See the exact request below.'
       : 'The draft button builds lines from your topic words with a small grammar. It takes nothing from any song. Edit freely.';
 
     clear(els.suggestionBox);

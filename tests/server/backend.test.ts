@@ -14,7 +14,7 @@ import { unzip } from '../../server/unzip';
 import { POSTFX_CLEAN } from '../../src/postfx/settings';
 import { estimateCost } from '../../src/style/cost';
 import { buildPrompt } from '../../src/style/prompt';
-import { buildComposeBody, planFromLyrics, StyleApiError } from '../../src/style/request';
+import { buildComposeBody, promptToStyles, sectionPlanFromLyrics, StyleApiError } from '../../src/style/request';
 import type { ComposeRequestBody, StyleTake } from '../../src/style/take';
 import { makeZip } from '../../src/ui/zip';
 
@@ -26,18 +26,42 @@ describe('buildComposeBody', () => {
     expect(buildComposeBody({ prompt, lengthSec: 60, vocals: false })).toEqual({
       prompt,
       music_length_ms: 60000,
-      model_id: 'music_v1',
+      model_id: 'music_v2_5',
       force_instrumental: true,
     });
-    const sung = buildComposeBody({ prompt, lengthSec: 45, vocals: true, modelId: 'music_v2' });
-    expect(sung).toMatchObject({ force_instrumental: false, model_id: 'music_v2', music_length_ms: 45000 });
-    expect(buildComposeBody({ prompt, lengthSec: 45, vocals: true, modelId: 'nope' })).toMatchObject({ model_id: 'music_v1' });
+    const sung = buildComposeBody({ prompt, lengthSec: 45, vocals: true, modelId: 'music_v1' });
+    expect(sung).toMatchObject({ force_instrumental: false, model_id: 'music_v1', music_length_ms: 45000 });
+    expect(buildComposeBody({ prompt, lengthSec: 45, vocals: true, modelId: 'nope' })).toMatchObject({ model_id: 'music_v2_5' });
   });
 
-  it('lyrics mode: a composition plan with the lines, on the model that takes plans', () => {
+  it('turns the prompt into short style phrases for a plan', () => {
+    const { styles, avoid } = promptToStyles('A slow song.\nGenre: ambient folk, dream pop.\nVocals: hushed, mixed low.\nMood: calm.\nAvoid: drums, bright leads.\nAlso: more hiss.');
+    expect(styles).toEqual(['A slow song', 'ambient folk', 'dream pop', 'Vocals: hushed, mixed low', 'calm', 'more hiss']);
+    expect(avoid).toEqual(['drums', 'bright leads']);
+  });
+
+  it('lyrics mode on the current models: chunks with the lines in their text', () => {
     const lyrics = '[verse 1]\nline one\nline two\n\n[refrain]\nline three';
-    const body = buildComposeBody({ prompt, lengthSec: 100, vocals: true, lyrics, modelId: 'music_v2' });
-    if (!('composition_plan' in body)) throw new Error('expected a plan');
+    const body = buildComposeBody({ prompt, lengthSec: 100, vocals: true, lyrics });
+    if (!('composition_plan' in body) || !('chunks' in body.composition_plan)) throw new Error('expected a chunk plan');
+    expect(body.model_id).toBe('music_v2_5');
+    expect('respect_sections_durations' in body).toBe(false);
+    const { chunks } = body.composition_plan;
+    expect(chunks.map((c) => c.text)).toEqual(['[intro]', '[verse 1]\nline one\nline two', '[refrain]\nline three', '[outro]']);
+    expect(chunks.reduce((sum, c) => sum + c.duration_ms, 0)).toBe(100000);
+    expect(chunks[0].positive_styles).toContain('lo-fi bedroom recording');
+    expect(chunks[0].positive_styles.at(-1)).toBe('instrumental, no singing');
+    expect(chunks[0].negative_styles).toContain('vocals');
+    expect(chunks[1].negative_styles).toEqual(['polished studio sound', 'bright modern production', 'busy arrangement']);
+    expect(chunks.every((c) => c.duration_ms >= 3000 && c.duration_ms <= 120000)).toBe(true);
+    // Lyrics are ignored when vocals are off.
+    expect('prompt' in buildComposeBody({ prompt, lengthSec: 100, vocals: false, lyrics })).toBe(true);
+  });
+
+  it('lyrics mode on music_v1: the older section plan', () => {
+    const lyrics = '[verse 1]\nline one\nline two\n\n[refrain]\nline three';
+    const body = buildComposeBody({ prompt, lengthSec: 100, vocals: true, lyrics, modelId: 'music_v1' });
+    if (!('composition_plan' in body) || !('sections' in body.composition_plan)) throw new Error('expected a section plan');
     expect(body.model_id).toBe('music_v1');
     const plan = body.composition_plan;
     expect(plan.sections.map((s) => s.section_name)).toEqual(['intro', 'verse 1', 'refrain', 'outro']);
@@ -46,9 +70,11 @@ describe('buildComposeBody', () => {
     expect(plan.sections.reduce((sum, s) => sum + s.duration_ms, 0)).toBe(100000);
     expect(plan.negative_global_styles).toEqual(['polished studio sound', 'bright modern production', 'busy arrangement']);
     expect(plan.positive_global_styles[0]).toBe('A loose, home-recorded instrumental sketch');
-    // Lyrics are ignored when vocals are off.
-    expect('prompt' in buildComposeBody({ prompt, lengthSec: 100, vocals: false, lyrics })).toBe(true);
-    expect(planFromLyrics(prompt, lyrics, 30).sections.every((s) => s.duration_ms >= 3000)).toBe(true);
+    expect(sectionPlanFromLyrics(prompt, lyrics, 30).sections.every((s) => s.duration_ms >= 3000)).toBe(true);
+    const long = Array.from({ length: 40 }, (_, i) => `line ${i} ${'x'.repeat(300)}`).join('\n');
+    const capped = sectionPlanFromLyrics(prompt, long, 120).sections[1];
+    expect(capped.lines).toHaveLength(30);
+    expect(capped.lines.every((l) => l.length <= 200)).toBe(true);
   });
 
   it('refuses names, empty and oversized prompts, and bad lengths before anything is sent', () => {
@@ -81,7 +107,7 @@ describe('compose', () => {
     const result = await compose({ prompt, lengthSec: 60, vocals: false }, { apiKey: 'k-123', fetch: fake });
     expect(Array.from(result.audio)).toEqual([1, 2, 3]);
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe('https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128');
+    expect(calls[0].url).toBe('https://api.elevenlabs.io/v1/music?output_format=auto');
     expect(calls[0].init.method).toBe('POST');
     expect((calls[0].init.headers as Record<string, string>)['xi-api-key']).toBe('k-123');
     expect(JSON.parse(calls[0].init.body as string)).toEqual(buildComposeBody({ prompt, lengthSec: 60, vocals: false }));
@@ -141,7 +167,7 @@ describe('backend routes', () => {
     lengthSec: 60,
     vocals: false,
     lyrics: '',
-    modelId: 'music_v1',
+    modelId: 'music_v2_5',
     confirmUsd: estimateCost(60).usd,
     meta: { profileA: 'bedroom-demo', profileB: null, mix: 0, words: '', fx: POSTFX_CLEAN },
     ...over,
@@ -152,7 +178,7 @@ describe('backend routes', () => {
   it('reports its status without leaking the key', async () => {
     const res = await fetch(`${base}status`);
     const text = await res.text();
-    expect(JSON.parse(text)).toMatchObject({ keyPresent: true, mock: false, usdPerMinute: 0.15, defaultModel: 'music_v1' });
+    expect(JSON.parse(text)).toMatchObject({ keyPresent: true, mock: false, usdPerMinute: 0.15, defaultModel: 'music_v2_5' });
     expect(text).not.toContain('k-test');
   });
 
@@ -174,7 +200,7 @@ describe('backend routes', () => {
     const res = await post('compose', request());
     expect(res.status).toBe(200);
     const take = (await res.json()) as StyleTake;
-    expect(take).toMatchObject({ profileA: 'bedroom-demo', lengthSec: 60, mock: false, costUsd: 0.15, model: 'music_v1', stems: null });
+    expect(take).toMatchObject({ profileA: 'bedroom-demo', lengthSec: 60, mock: false, costUsd: 0.15, model: 'music_v2_5', stems: null });
     expect(take.audioFile).toBe(`${take.id}.mp3`);
     expect(outbound).toHaveLength(1);
     expect(outbound[0].body).toEqual(take.body);

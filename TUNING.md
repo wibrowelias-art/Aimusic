@@ -408,11 +408,13 @@ three tones and noise bursts.
 
 ### Known limits
 
-- Nothing has been generated with the real music API yet (no key in the build environment at the time of
-  writing). Request shape, error shape and price come from the public docs and price list, read through
-  web-search excerpts on 2026-11-12. The first real call is the first real test of the client.
-- Stem separation: the endpoint and its ZIP answer are implemented from the docs; its price is not on the
-  API price list. The app assumes half a generation and says so in the confirm dialog.
+- Request shape, error shape and price were read from the provider's own pages on 2026-11-12
+  (api-reference/music/compose, the composition plan guide, the music quickstart, pricing/api): default model
+  `music_v2_5`; prompt + `music_length_ms` + `force_instrumental`; lyrics as a chunk plan (v2 models) or a
+  section plan (`music_v1`); $0.15 per minute, billed per generation, 5 minute limit.
+- Stem separation: the endpoint and its ZIP answer are implemented from the docs but not yet tried against
+  the live API; its price is not on the API price list. The app assumes half a generation and says so in
+  the confirm dialog.
 - The cost shown is an estimate (length x $0.15 per minute). Rounding rules and plan credits are the provider's.
 - The name guard works on form (quotes, "in the style of", capitals mid-sentence). A name typed in lowercase
   with no such phrase around it passes the guard; the provider's own filter is the second line there.

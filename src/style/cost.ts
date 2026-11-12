@@ -3,7 +3,10 @@
  * whatever the provider bills. Change the numbers here when the price list changes.
  */
 
-/** Music generation, USD per minute of audio. Source: elevenlabs.io/pricing/api, read 2026-11-12. */
+/**
+ * Music generation, USD per minute of audio, billed per generation. Plans include some
+ * minutes (Starter 40, Creator 147, Pro 660 a month). Source: elevenlabs.io/pricing/api, read 2026-11-12.
+ */
 export const MUSIC_USD_PER_MINUTE = 0.15;
 /**
  * Stem separation as a share of the generation price. The API price list has no line for

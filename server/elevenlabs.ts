@@ -2,15 +2,16 @@
  * Client for the ElevenLabs Music API. Node side only: the key never reaches the browser.
  * The body comes from src/style/request.ts (guarded there).
  *
- * API facts used (elevenlabs.io/docs/api-reference/music, read 2026-11-12):
+ * API facts used (elevenlabs.io/docs/api-reference/music and the music quickstart, read 2026-11-12):
  *   POST /v1/music?output_format=...   header xi-api-key   JSON body -> audio bytes
  *   A refused prompt answers with detail.status "bad_prompt" and detail.data.prompt_suggestion.
- *   POST /v1/music/stem-separation  multipart (file, stem_variation_id) -> ZIP of stems.
+ *   POST /v1/music/stem-separation  multipart (file, stem_variation_id) -> ZIP with one file per stem.
  */
 import { buildComposeBody, StyleApiError, type ComposeBody, type ComposeInput } from '../src/style/request';
 
 export const API_BASE = 'https://api.elevenlabs.io';
-export const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
+/** The API's own default: it picks the format that fits the model (128 kbps for v1, 192 kbps at 48 kHz for v2). */
+export const DEFAULT_OUTPUT_FORMAT = 'auto';
 
 export interface ClientDeps {
   apiKey: string;
@@ -70,7 +71,8 @@ export async function separateStems(audio: Uint8Array, fileName: string, deps: C
   const form = new FormData();
   form.append('file', new Blob([audio as Uint8Array<ArrayBuffer>], { type: 'audio/mpeg' }), fileName);
   form.append('stem_variation_id', 'two_stems_v1');
-  const url = `${API_BASE}/v1/music/stem-separation?output_format=${encodeURIComponent(deps.outputFormat ?? DEFAULT_OUTPUT_FORMAT)}`;
+  // No output_format here unless one was asked for: this endpoint has no "auto".
+  const url = `${API_BASE}/v1/music/stem-separation${deps.outputFormat ? `?output_format=${encodeURIComponent(deps.outputFormat)}` : ''}`;
   const res = await deps.fetch(url, {
     method: 'POST',
     headers: { 'xi-api-key': deps.apiKey },
