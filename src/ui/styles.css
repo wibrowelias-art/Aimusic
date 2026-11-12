@@ -1600,3 +1600,109 @@ a.btn {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Engine switch: built-in generator (free) or music AI (paid) */
+.sl-engine {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sl-engine-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  text-align: left;
+  min-width: 0;
+}
+
+.sl-engine-option:hover {
+  border-color: var(--line-strong);
+}
+
+.sl-engine-name {
+  font-weight: 620;
+  font-size: 14px;
+}
+
+.sl-engine-sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sl-engine-option[aria-checked='true'] {
+  border-color: rgba(143, 211, 182, 0.6);
+  background: linear-gradient(180deg, rgba(143, 211, 182, 0.1), rgba(143, 211, 182, 0.03));
+}
+
+.sl-engine-option[aria-checked='true'] .sl-engine-name {
+  color: var(--accent);
+}
+
+.sl-engine-option[data-engine='ai'][aria-checked='true'] {
+  border-color: rgba(233, 184, 114, 0.6);
+  background: linear-gradient(180deg, rgba(233, 184, 114, 0.1), rgba(233, 184, 114, 0.03));
+}
+
+.sl-engine-option[data-engine='ai'][aria-checked='true'] .sl-engine-name {
+  color: var(--warm);
+}
+
+.sl-vocals-hint {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.sl-plan-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sl-plan-list li {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-sunk);
+  font-size: 12.5px;
+}
+
+.sl-plan-list li[data-group='voice'] {
+  border-color: rgba(169, 161, 232, 0.5);
+  color: var(--violet);
+}
+
+.sl-plan-list li[data-group='drums'] {
+  border-color: rgba(233, 184, 114, 0.4);
+}
+
+.sl-plan-words p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+
+.sl-understood {
+  color: var(--accent);
+}
+
+.sl-ignored {
+  color: var(--warm);
+}
+
+.sl-banner {
+  margin-bottom: 0;
+}
+
+@media (max-width: 620px) {
+  .sl-engine {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

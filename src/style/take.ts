@@ -3,6 +3,14 @@ import type { PostFxSettings } from '../postfx/settings';
 import type { FamilyId } from './types';
 
 export interface StyleTake {
+  /**
+   * 'sketch' = made by the built-in generator in the browser (free; kept in localStorage,
+   * the audio is made again from `seed` and the settings). Missing or 'ai' = made by the
+   * music API through the local server (audio kept on disk).
+   */
+  engine?: 'ai' | 'sketch';
+  /** uint32 seed of a 'sketch' take. */
+  seed?: number;
   id: string;
   /** ISO time the server wrote the file. */
   createdAt: string;

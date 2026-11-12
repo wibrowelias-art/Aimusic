@@ -2,9 +2,10 @@
 /**
  * `npm run check:ui`
  *
- * Drives the real app in headless Chromium. First the Style Lab in mock mode (no call
- * to the music API, nothing billed): profiles, mix, own words, the name guard, lyrics,
- * cost confirmation, the lo-fi chain and its numbers. Then the offline piano lab:
+ * Drives the real app in headless Chromium. First the Style Lab: the free built-in
+ * generator (nothing leaves the page), then the music AI engine in mock mode (no call to
+ * the music API, nothing billed): profiles, mix, own words, the name guard, lyrics, cost
+ * confirmation, the lo-fi chain and its numbers. Then the offline piano lab:
  * Generate, Again, a knob, rating, favorites, waveform render, MIDI / WAV / stems export,
  * reload, history, seek, keyboard shortcuts. Fails on any console error. Screenshots go
  * to reports/tmp/.
@@ -68,6 +69,61 @@ try {
 
   check((await page.locator('.profile').count()) === 6, 'six profiles: five families and the offline piano');
   check((await page.getAttribute('.profile[data-profile="bedroom-demo"]', 'aria-checked')) === 'true', 'starts on a Style Lab family');
+
+  // ---- The built-in generator: free, nothing leaves the page
+  const posts = [];
+  const onRequest = (r) => {
+    if (r.method() !== 'GET') posts.push(`${r.method()} ${r.url()}`);
+  };
+  page.on('request', onRequest);
+  const localTakes = () => page.evaluate(() => JSON.parse(localStorage.getItem('ambientlab.sketch.v1') ?? '[]'));
+  const planParts = () => page.$$eval('.sl-plan-list li', (els) => els.map((e) => e.textContent));
+  check((await page.getAttribute('.sl-engine-option[data-engine="sketch"]', 'aria-checked')) === 'true', 'the free built-in generator is the default');
+  check(((await text('.sl-cost')) ?? '').startsWith('Free'), `the page says it is free: ${await text('.sl-cost')}`);
+  check((await page.isVisible('.sl-plan')) && !(await page.isVisible('.sl-prompt')), 'free mode shows what will be played, not a prompt');
+  check((await planParts()).includes('drum machine tick'), 'the bedroom family comes with its drum machine');
+  await page.fill('.sl-words input', 'more tape hiss, no drums, like a rainy sunday');
+  const partsNoDrums = await planParts();
+  check(!partsNoDrums.some((x) => /drum/.test(x)) && partsNoDrums.includes('looped guitar figure'), `"no drums" takes the drums out: ${partsNoDrums.join(', ')}`);
+  check(((await text('.sl-understood')) ?? '').includes('hiss up 4 dB') && ((await text('.sl-understood')) ?? '').includes('drums left out'), 'the page says what it made of the words');
+  check(((await text('.sl-ignored')) ?? '').includes('like a rainy sunday'), 'and which words it did not understand');
+  check((await page.getAttribute('[role="slider"][aria-label="Hiss"]', 'aria-valuetext')) === '-46 dB', '"more tape hiss" moves the hiss knob (-50 -> -46 dB)');
+  await page.fill('.sl-length input', '20');
+  await page.click('.sl-generate');
+  check(!(await page.isVisible('dialog[open]')), 'free: no cost dialog');
+  await chainDone();
+  const freeKey = await metric('Key and tempo');
+  check(freeKey.includes('BPM'), `the free take reports its key and tempo: ${freeKey}`);
+  check(Math.abs(Number.parseFloat(await metric('Loudness')) + 16) <= 0.5 && Number.parseFloat(await metric('Peak')) < -1, `free take on target: ${await metric('Loudness')}, peak ${await metric('Peak')}`);
+  check((await metric('Hiss')).startsWith('-46 dBFS'), 'the hiss in the file is where the words put it');
+  let local = await localTakes();
+  check(local.length === 1 && local[0].engine === 'sketch' && Number.isInteger(local[0].seed) && local[0].costUsd === 0, 'the take is kept as seed + settings in the browser');
+  await page.screenshot({ path: 'reports/tmp/ui-s0-free.png', fullPage: true });
+  await page.reload();
+  await chainDone();
+  check((await metric('Key and tempo')) === freeKey, 'after a reload the same seed gives the same piece');
+
+  await page.click('.profile[data-profile="dream-folk"]');
+  await chainDone();
+  check((await planParts()).includes('wordless lead voice'), 'dream-folk comes with a wordless voice');
+  await page.fill('.sl-length input', '20');
+  await page.click('.sl-generate');
+  await chainDone();
+  check((await metric('Vocal blur')) === 'on the vocal stem', 'the voice of the built-in generator gets the vocal blur without any stem separation');
+  check(posts.length === 0, `the free generator sent nothing anywhere${posts.length ? `: ${posts.join(' | ')}` : ''}`);
+  page.off('request', onRequest);
+  for (let n = 2; n > 0; n--) {
+    page.once('dialog', (d) => void d.accept());
+    await page.click('.sl-take >> nth=0 >> .btn');
+    await page.waitForFunction((count) => document.querySelectorAll('.sl-take').length === count, takesBefore.length + n - 1);
+  }
+  check((await localTakes()).length === 0, 'deleting removes the free takes');
+
+  // ---- The music AI engine, in mock mode
+  await page.click('.profile[data-profile="bedroom-demo"]');
+  await page.fill('.sl-words input', '');
+  await page.click('.sl-engine-option[data-engine="ai"]');
+  check((await page.isVisible('.sl-prompt')) && !(await page.isVisible('.sl-plan')), 'the music AI engine shows the prompt');
   check(((await text('.sl-banner')) ?? '').includes('Mock mode'), 'the page says when mock mode is on');
   check((await prompt()).includes('Vocals: none. Instrumental only'), 'the prompt text is shown and says instrumental');
   check(!(await page.isDisabled('.sl-generate')), 'Generate is ready');

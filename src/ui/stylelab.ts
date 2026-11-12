@@ -1,10 +1,14 @@
 /**
  * The Style Lab view: pick a style family (the shell does that), mix a second one in,
- * add your own words, read and edit the exact prompt, confirm the cost, generate, and
- * run the result through the lo-fi chain with a knob per stage.
+ * add your own words, generate, and run the result through the lo-fi chain with a knob
+ * per stage.
  *
- * The music API is only ever reached through the local server (server/plugin.ts): the
- * page never sees the key. Nothing leaves before the cost has been confirmed.
+ * Two engines:
+ *   - "Built-in generator" (default): free. The piece is composed and synthesised in the
+ *     browser from a seed. Nothing is sent anywhere. Takes are kept in localStorage.
+ *   - "Music AI": the ElevenLabs Music API through the local server (server/plugin.ts).
+ *     Costs money, needs a key in .env, shows the exact prompt, and always asks to
+ *     confirm the estimated cost first. The page never sees the key.
  */
 import {
   Check,
@@ -33,6 +37,7 @@ import {
   type PostFxNumericKey,
   type PostFxSettings,
 } from '../postfx/settings';
+import { makeSketch, parseWords, renderSketch, type Sketch, type SketchRequest } from '../sketch';
 import { browserStore, readJson, writeJson, type KeyValueStore } from '../store/storage';
 import { estimateCost, formatLength, formatUsd, MUSIC_USD_PER_MINUTE, PRICE_SOURCE } from '../style/cost';
 import { checkDescriptors, GUARD_RULE } from '../style/guard';
@@ -46,10 +51,16 @@ import { clear, downloadBytes, h, icon } from './dom';
 import { Knob } from './knob';
 
 const STATE_KEY = 'ambientlab.style.v1';
+/** Takes of the built-in generator: seed and settings only, the audio is made again. */
+const LOCAL_TAKES_KEY = 'ambientlab.sketch.v1';
+const LOCAL_TAKES_LIMIT = 40;
 const API = '/api/style/';
 const CHAIN_DEBOUNCE_MS = 350;
 
+type Engine = 'sketch' | 'ai';
+
 interface LabState {
+  engine: Engine;
   a: FamilyId;
   b: FamilyId | null;
   /** Share of `b`, 0..1. */
@@ -67,6 +78,14 @@ interface LabState {
   fx: PostFxSettings;
   /** True once a chain knob was turned: the profile preset no longer rewrites it. */
   fxEdited: boolean;
+}
+
+interface Decoded {
+  id: string;
+  full: StereoPcm;
+  stems: { vocals: StereoPcm; backing: StereoPcm } | null;
+  /** The arrangement, for takes of the built-in generator. */
+  sketch: Sketch | null;
 }
 
 export interface StyleLabHost {
@@ -100,7 +119,7 @@ async function api<T>(route: string, init?: RequestInit): Promise<T> {
   if (!res.ok || body === null) {
     const err = (body as ApiErrorBody | null)?.error;
     if (err) throw new ApiError(err.message, err.code, err.suggestion);
-    throw new ApiError('The Style Lab backend is not there. It runs with "npm run dev" on your computer.', 'offline', null);
+    throw new ApiError('The music AI backend is not there. It runs with "npm run dev" on your computer.', 'offline', null);
   }
   return body as T;
 }
@@ -130,6 +149,21 @@ function seedOf(text: string): number {
 }
 
 const db = (v: number, digits = 1): string => (Number.isFinite(v) ? `${v.toFixed(digits)}` : '-inf');
+const isSketch = (take: StyleTake): boolean => take.engine === 'sketch';
+/** Lets the page paint ("Generating...") before a few seconds of arithmetic. */
+const nextPaint = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
+
+function sketchRequestOf(take: StyleTake): SketchRequest {
+  return {
+    seed: take.seed ?? 1,
+    a: take.profileA,
+    b: take.profileB,
+    mix: take.mix,
+    words: take.words,
+    vocals: take.vocals,
+    lengthSec: take.lengthSec,
+  };
+}
 
 export class StyleLab {
   readonly element: HTMLElement;
@@ -138,10 +172,12 @@ export class StyleLab {
   private state: LabState;
   private status: StyleStatus | null = null;
   private statusError: string | null = null;
+  private serverTakes: StyleTake[] = [];
   private takes: StyleTake[] = [];
   private current: StyleTake | null = null;
-  private decoded: { id: string; full: StereoPcm; stems: { vocals: StereoPcm; backing: StereoPcm } | null } | null = null;
+  private decoded: Decoded | null = null;
   private lofi: { pcm: StereoPcm; report: PostFxReport; url: string } | null = null;
+  private rawUrl: string | null = null;
   private busy = false;
   private chainToken = 0;
   private chainTimer = 0;
@@ -199,6 +235,7 @@ export class StyleLab {
     const profile = PROFILES[a];
     const base = { a, b: null, mix: 0.3, words: '', vocals: profile.vocalsDefault, lengthSec: profile.lengthSec };
     return {
+      engine: 'sketch',
       ...base,
       modelId: DEFAULT_MODEL,
       prompt: buildPrompt(base),
@@ -221,6 +258,7 @@ export class StyleLab {
     const num = (v: unknown, lo: number, hi: number, d: number): number =>
       typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
     return {
+      engine: raw.engine === 'ai' ? 'ai' : 'sketch',
       a,
       b: isFamily(raw.b) && raw.b !== a ? raw.b : null,
       mix: num(raw.mix, 0, 1, base.mix),
@@ -247,10 +285,16 @@ export class StyleLab {
     return { a, b, mix: b ? mix : 0, words, vocals, lengthSec };
   }
 
+  /** The chain preset of the current recipe. The built-in generator also reads the words for it. */
+  private presetFx(): PostFxSettings {
+    const blend = blendOf(this.request()).fx;
+    return this.state.engine === 'sketch' ? parseWords(this.state.words).fx(blend) : blend;
+  }
+
   /** Settings changed: rewrite the prompt and the chain preset unless they were edited by hand. */
   private rebuild(): void {
     if (!this.state.promptEdited) this.state.prompt = buildPrompt(this.request());
-    if (!this.state.fxEdited) this.state.fx = blendOf(this.request()).fx;
+    if (!this.state.fxEdited) this.state.fx = this.presetFx();
     this.save();
     this.refreshAll();
     if (!this.state.fxEdited) this.scheduleChain();
@@ -264,10 +308,49 @@ export class StyleLab {
     return this.status?.mock === true;
   }
 
+  private localTakes(): StyleTake[] {
+    const raw = readJson(this.kv, LOCAL_TAKES_KEY);
+    if (!Array.isArray(raw)) return [];
+    return (raw as StyleTake[]).filter((t) => t && t.engine === 'sketch' && typeof t.id === 'string' && (FAMILY_IDS as readonly string[]).includes(t.profileA));
+  }
+
+  private saveLocalTakes(takes: StyleTake[]): void {
+    writeJson(this.kv, LOCAL_TAKES_KEY, takes.slice(0, LOCAL_TAKES_LIMIT));
+  }
+
+  private mergeTakes(): void {
+    this.takes = [...this.localTakes(), ...this.serverTakes].sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1));
+  }
+
   // ------------------------------------------------------------------ build
 
   private build() {
     const banner = h('div', { class: 'sl-banner', role: 'status' });
+
+    // Engine
+    const engineButton = (engine: Engine, title: string, sub: string): HTMLButtonElement =>
+      h(
+        'button',
+        {
+          class: 'sl-engine-option',
+          type: 'button',
+          role: 'radio',
+          dataset: { engine },
+          onclick: () => {
+            if (this.state.engine === engine) return;
+            this.state.engine = engine;
+            this.rebuild();
+          },
+        },
+        h('span', { class: 'sl-engine-name' }, title),
+        h('span', { class: 'sl-engine-sub' }, sub),
+      );
+    const engines = h(
+      'div',
+      { class: 'sl-engine', role: 'radiogroup', 'aria-label': 'How the music is made' },
+      engineButton('sketch', 'Built-in generator', 'Free. Made on this computer, nothing is sent.'),
+      engineButton('ai', 'Music AI', 'Paid. ElevenLabs, needs your key.'),
+    );
 
     // Recipe
     const mixSelect = h('select', {
@@ -311,6 +394,7 @@ export class StyleLab {
         this.rebuild();
       },
     });
+    const vocalsHint = h('span', { class: 'sl-vocals-hint' });
     const lengthRange = h('input', {
       type: 'range',
       class: 'sl-range',
@@ -333,8 +417,25 @@ export class StyleLab {
       },
     });
     for (const id of MODELS) model.append(h('option', { value: id }, id));
+    const modelField = h('label', { class: 'field sl-model' }, 'Model', model);
 
-    // Prompt
+    // Plan (built-in generator)
+    const planList = h('ul', { class: 'sl-plan-list' });
+    const planWords = h('div', { class: 'sl-plan-words' });
+    const planPanel = h(
+      'section',
+      { class: 'panel sl-plan', 'aria-label': 'What it will play' },
+      h('h2', null, 'What it will play'),
+      planList,
+      planWords,
+      h(
+        'p',
+        { class: 'hint' },
+        'The notes come from a seeded composer and are played by synthesised instruments. No recordings, no music AI. Every Generate is a new piece.',
+      ),
+    );
+
+    // Prompt (music AI)
     const promptText = h('textarea', {
       class: 'sl-prompt-text',
       rows: '13',
@@ -416,12 +517,22 @@ export class StyleLab {
       lyricsNote,
     );
     const requestPre = h('pre', { class: 'sl-request' });
+    const promptPanel = h(
+      'section',
+      { class: 'panel sl-prompt', 'aria-label': 'Prompt' },
+      h('div', { class: 'sl-prompt-head' }, h('h2', null, 'Prompt - exactly what is sent'), promptNote, rebuildBtn),
+      promptText,
+      guardList,
+      suggestionBox,
+      lyricsBlock,
+      h('details', { class: 'sl-details' }, h('summary', null, 'The exact request (JSON)'), requestPre),
+    );
 
     // Generate
     const generateLabel = h('span', { class: 'generate-label' }, 'Generate');
     const generate = h(
       'button',
-      { class: 'sl-generate', type: 'button', onclick: () => this.askGenerate() },
+      { class: 'sl-generate', type: 'button', onclick: () => this.onGenerate() },
       icon(Sparkles, 22),
       generateLabel,
     );
@@ -434,6 +545,7 @@ export class StyleLab {
     const rawAudio = h('audio', { controls: true, preload: 'metadata', class: 'sl-audio' });
     lofiAudio.addEventListener('play', () => rawAudio.pause());
     rawAudio.addEventListener('play', () => lofiAudio.pause());
+    const rawLabel = h('span', null, 'Raw');
     const chainStatus = h('span', { class: 'sl-chain-status', role: 'status', 'aria-live': 'polite' });
     const metrics = h('table', { class: 'sl-metrics' });
     const downloadLofi = h(
@@ -442,7 +554,7 @@ export class StyleLab {
       icon(Download, 14),
       'Lo-fi WAV',
     );
-    const downloadRaw = h('a', { class: 'btn small', title: 'Download the file as it came back from the music AI' }, icon(Download, 14), 'Raw file');
+    const downloadRaw = h('a', { class: 'btn small', title: 'Download the version before the lo-fi chain' }, icon(Download, 14), 'Raw file');
     const stemsBtn = h(
       'button',
       { class: 'btn small', type: 'button', onclick: () => this.askStems() },
@@ -459,7 +571,12 @@ export class StyleLab {
       'section',
       { class: 'panel sl-result', 'aria-label': 'Current take' },
       h('div', { class: 'sl-take-line' }, resultTitle, resultSub),
-      h('div', { class: 'sl-players' }, h('label', { class: 'sl-player' }, h('span', null, 'Lo-fi (after the chain)'), lofiAudio), h('label', { class: 'sl-player' }, h('span', null, 'Raw (from the music AI)'), rawAudio)),
+      h(
+        'div',
+        { class: 'sl-players' },
+        h('label', { class: 'sl-player' }, h('span', null, 'Lo-fi (after the chain)'), lofiAudio),
+        h('label', { class: 'sl-player' }, rawLabel, rawAudio),
+      ),
       h('div', { class: 'sl-actions' }, downloadLofi, downloadRaw, stemsBtn, up, down, chainStatus),
       metrics,
     );
@@ -541,13 +658,14 @@ export class StyleLab {
     const root = h(
       'div',
       { class: 'sl' },
-      banner,
       h(
         'main',
         { class: 'layout' },
         h(
           'section',
           { class: 'stage', 'aria-label': 'Recipe and result' },
+          engines,
+          banner,
           h(
             'section',
             { class: 'panel sl-recipe', 'aria-label': 'Recipe' },
@@ -558,21 +676,13 @@ export class StyleLab {
               h('label', { class: 'field' }, 'Mix with', mixSelect),
               h('label', { class: 'field sl-mix' }, h('span', null, 'How much of it'), mixRange, mixText),
               h('label', { class: 'field sl-words' }, 'Your own words', words),
-              h('label', { class: 'field sl-vocals' }, 'Vocals', vocals),
+              h('label', { class: 'field sl-vocals' }, 'Vocals', vocals, vocalsHint),
               h('label', { class: 'field sl-length' }, h('span', null, 'Length'), lengthRange, lengthText),
-              h('label', { class: 'field' }, 'Model', model),
+              modelField,
             ),
           ),
-          h(
-            'section',
-            { class: 'panel sl-prompt', 'aria-label': 'Prompt' },
-            h('div', { class: 'sl-prompt-head' }, h('h2', null, 'Prompt - exactly what is sent'), promptNote, rebuildBtn),
-            promptText,
-            guardList,
-            suggestionBox,
-            lyricsBlock,
-            h('details', { class: 'sl-details' }, h('summary', null, 'The exact request (JSON)'), requestPre),
-          ),
+          planPanel,
+          promptPanel,
           h('div', { class: 'hero sl-hero' }, generate, costText),
           result,
         ),
@@ -597,14 +707,21 @@ export class StyleLab {
     return {
       root,
       banner,
+      engines,
       mixSelect,
       mixRange,
       mixText,
       words,
       vocals,
+      vocalsHint,
       lengthRange,
       lengthText,
       model,
+      modelField,
+      planPanel,
+      planList,
+      planWords,
+      promptPanel,
       promptText,
       promptNote,
       rebuildBtn,
@@ -624,6 +741,7 @@ export class StyleLab {
       resultSub,
       lofiAudio,
       rawAudio,
+      rawLabel,
       chainStatus,
       metrics,
       downloadLofi,
@@ -650,23 +768,30 @@ export class StyleLab {
       h(
         'p',
         null,
-        'Pick a style family, mix a second one in, add your own words. The lab writes a prompt of plain sound descriptors, a music AI makes a new song from it, and the lo-fi chain here makes it rougher.',
+        'Pick a style family, mix a second one in, add your own words, press Generate. Then the lo-fi chain makes the result rougher: tape, room, bedroom mic, hiss, slowed.',
+      ),
+      h('h3', null, 'Two ways to make the music'),
+      h(
+        'ul',
+        null,
+        h(
+          'li',
+          null,
+          'Built-in generator (free): a seeded composer writes chords and a melody, synthesised instruments play them. It runs in your browser. It cannot sing words; "Vocals" adds a wordless synth voice.',
+        ),
+        h(
+          'li',
+          null,
+          'Music AI (paid): the ElevenLabs Music API makes a song from a prompt of plain sound descriptors. It needs your API key in .env, shows the estimated cost and waits for your yes every time.',
+        ),
       ),
       h('h3', null, 'What it never does'),
       h(
         'ul',
         null,
-        h('li', null, 'It never sends an artist name or a song title. The prompt is checked on this page and again on the local server.'),
+        h('li', null, 'It never sends an artist name or a song title anywhere. The prompt is checked on this page and again on the local server.'),
         h('li', null, 'It never copies a melody, chords, lyrics or a recording. The families are lists of general traits; STYLES.md has the sources.'),
-        h('li', null, 'It never calls the music API without showing the estimated cost first and getting a yes.'),
-      ),
-      h('h3', null, 'Where things live'),
-      h(
-        'ul',
-        null,
-        h('li', null, 'The API key sits in the .env file on your computer and stays on the local server.'),
-        h('li', null, 'Every generation is saved in renders/style with its exact request, so a paid one is not lost on reload.'),
-        h('li', null, 'The lo-fi chain runs in your browser and costs nothing. Turn a knob and it renders again.'),
+        h('li', null, 'It never spends money without asking. The built-in generator spends none at all.'),
       ),
       h('h3', null, 'Numbers, not opinions'),
       h(
@@ -683,6 +808,15 @@ export class StyleLab {
 
   private refreshAll(): void {
     const { els, state } = this;
+    const sketch = state.engine === 'sketch';
+    for (const option of els.engines.querySelectorAll<HTMLElement>('.sl-engine-option')) {
+      option.setAttribute('aria-checked', String(option.dataset.engine === state.engine));
+    }
+    els.planPanel.hidden = !sketch;
+    els.promptPanel.hidden = sketch;
+    els.modelField.hidden = sketch;
+    els.vocalsHint.textContent = sketch ? 'a wordless synth voice (it cannot sing words)' : '';
+
     clear(els.mixSelect);
     els.mixSelect.append(h('option', { value: '' }, 'Nothing'));
     for (const id of FAMILY_IDS) {
@@ -701,6 +835,7 @@ export class StyleLab {
     els.model.value = state.modelId;
     if (els.topics.value !== state.topics) els.topics.value = state.topics;
     this.refreshFx();
+    this.refreshPlan();
     this.refreshPrompt();
     this.refreshBanner();
   }
@@ -712,13 +847,39 @@ export class StyleLab {
     els.resetFx.disabled = !state.fxEdited;
     const slowed = state.fx.slowedPct;
     const length = slowed > 0 ? ` After slowing, ${formatLength(state.lengthSec)} becomes about ${formatLength(state.lengthSec / (1 - slowed / 100))}.` : '';
-    els.fxNote.textContent = `Free: the chain runs here, not at the music AI. Turn a knob and the lo-fi version renders again.${length}`;
+    els.fxNote.textContent = `The chain runs here and costs nothing. Turn a knob and the lo-fi version renders again.${length}`;
     els.lengthText.textContent = formatLength(state.lengthSec);
+  }
+
+  /** The built-in generator's plan: which parts play, and what it made of the owner's words. */
+  private refreshPlan(): void {
+    const { els, state } = this;
+    if (state.engine !== 'sketch') return;
+    // The parts do not depend on the seed, so any seed shows the right list.
+    const preview = makeSketch({ ...this.request(), seed: 1 });
+    clear(els.planList);
+    for (const track of preview.tracks) els.planList.append(h('li', { dataset: { group: track.group } }, track.label));
+    clear(els.planWords);
+    const { understood, ignored } = preview.words;
+    if (understood.length > 0) {
+      els.planWords.append(h('p', { class: 'sl-understood' }, 'From your words: ', understood.join('; '), '.'));
+    }
+    if (ignored.length > 0) {
+      els.planWords.append(
+        h(
+          'p',
+          { class: 'sl-ignored' },
+          `Not understood by the built-in generator: ${ignored.map((w) => `"${w}"`).join(', ')}. `,
+          'It knows: no / more / less / add + drums, guitar, bass, keys, pads, voice, hiss, reverb, wobble, saturation, space; and slower, faster, darker, brighter, sadder, happier, sparser, busier.',
+        ),
+      );
+    }
   }
 
   /** Everything that depends on the prompt text: guard, request preview, cost, the button. */
   private refreshPrompt(): void {
     const { els, state } = this;
+    const sketch = state.engine === 'sketch';
     if (els.promptText.value !== state.prompt) els.promptText.value = state.prompt;
     if (els.lyricsText.value !== state.lyrics) els.lyricsText.value = state.lyrics;
     els.promptNote.textContent = state.promptEdited ? 'edited by hand - settings no longer change it' : '';
@@ -780,17 +941,21 @@ export class StyleLab {
     els.suggestionBox.hidden = this.suggestion === null;
 
     const mock = this.isMock();
-    const cost = estimateCost(state.lengthSec, { usdPerMinute: this.usdPerMinute() });
     clear(els.costText);
-    if (mock) {
+    let blocked = this.busy;
+    if (sketch) {
+      els.costText.append(h('strong', null, 'Free'), h('span', null, 'Made on this computer by the built-in generator. Nothing is sent anywhere.'));
+    } else if (mock) {
       els.costText.append(h('strong', null, 'Mock mode: free'), h('span', null, 'A test signal comes back, the music API is not called.'));
+      blocked ||= requestError !== null || this.status === null;
     } else {
+      const cost = estimateCost(state.lengthSec, { usdPerMinute: this.usdPerMinute() });
       els.costText.append(
         h('strong', null, `About ${formatUsd(cost.usd)}`),
         h('span', null, `${formatLength(state.lengthSec)} at $${cost.usdPerMinute.toFixed(2)} per minute. You confirm before anything is sent.`),
       );
+      blocked ||= requestError !== null || this.status === null || !this.status.keyPresent;
     }
-    const blocked = requestError !== null || this.busy || (!mock && this.status !== null && !this.status.keyPresent) || this.status === null;
     els.generate.disabled = blocked;
     els.generate.classList.toggle('is-busy', this.busy);
     els.generateLabel.textContent = this.busy ? 'Generating...' : 'Generate';
@@ -801,10 +966,12 @@ export class StyleLab {
     const { banner } = this.els;
     clear(banner);
     let text: string | null = null;
-    if (this.statusError) text = this.statusError;
-    else if (this.status?.mock) text = 'Mock mode is on (STYLE_LAB_MOCK=1): Generate returns a test signal, nothing is billed.';
-    else if (this.status && !this.status.keyPresent) {
-      text = 'No API key yet. Copy .env.example to .env, put your ElevenLabs key in, and reload. To try the page for free first, set STYLE_LAB_MOCK=1 there.';
+    if (this.state.engine === 'ai') {
+      if (this.statusError) text = `${this.statusError} The built-in generator works without it.`;
+      else if (this.status?.mock) text = 'Mock mode is on (STYLE_LAB_MOCK=1): Generate returns a test signal, nothing is billed.';
+      else if (this.status && !this.status.keyPresent) {
+        text = 'No API key yet. Copy .env.example to .env, put your ElevenLabs key in, and reload. The built-in generator needs no key.';
+      }
     }
     banner.hidden = text === null;
     if (text) banner.append(icon(Info, 15), h('span', null, text));
@@ -824,10 +991,11 @@ export class StyleLab {
 
   private async refreshTakes(loadLatest = false): Promise<void> {
     try {
-      this.takes = await api<StyleTake[]>('takes');
+      this.serverTakes = await api<StyleTake[]>('takes');
     } catch {
-      this.takes = [];
+      this.serverTakes = [];
     }
+    this.mergeTakes();
     this.renderTakes();
     if (loadLatest && this.takes[0] && !this.current) void this.loadTake(this.takes[0]);
     else this.refreshResult();
@@ -844,12 +1012,14 @@ export class StyleLab {
     const list = this.els.takeList;
     clear(list);
     if (this.takes.length === 0) {
-      list.append(h('li', { class: 'empty' }, 'Nothing generated yet. Every generation is kept here (renders/style on disk).'));
+      list.append(h('li', { class: 'empty' }, 'Nothing generated yet. Every generation is kept here.'));
       return;
     }
     for (const take of this.takes) {
       const when = new Date(take.createdAt);
       const date = Number.isNaN(when.getTime()) ? '' : `${when.toLocaleDateString()} ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const kind = isSketch(take) ? 'built-in, free' : take.mock ? 'test signal' : `music AI, ${formatUsd(take.costUsd)}`;
+      const voice = take.vocals ? (isSketch(take) ? 'wordless voice' : 'vocals') : 'instrumental';
       list.append(
         h(
           'li',
@@ -858,11 +1028,7 @@ export class StyleLab {
             'button',
             { class: 'sl-take-load', type: 'button', onclick: () => void this.loadTake(take) },
             h('span', { class: 'sl-take-name' }, this.takeLabel(take), take.rating === 1 ? ' +' : take.rating === -1 ? ' -' : ''),
-            h(
-              'span',
-              { class: 'sl-take-meta' },
-              `${formatLength(take.lengthSec)} - ${take.vocals ? 'vocals' : 'instrumental'} - ${take.mock ? 'test signal' : formatUsd(take.costUsd)} - ${date}`,
-            ),
+            h('span', { class: 'sl-take-meta' }, `${formatLength(take.lengthSec)} - ${voice} - ${kind} - ${date}`),
           ),
           h(
             'button',
@@ -870,7 +1036,7 @@ export class StyleLab {
               class: 'btn small icon-only ghost',
               type: 'button',
               'aria-label': 'Delete this generation',
-              title: 'Delete this generation and its files',
+              title: 'Delete this generation',
               onclick: () => void this.deleteTake(take),
             },
             icon(Trash2, 13),
@@ -885,15 +1051,25 @@ export class StyleLab {
     const take = this.current;
     els.result.hidden = take === null;
     if (!take) return;
+    const sketch = isSketch(take);
     els.resultTitle.textContent = this.takeLabel(take);
-    els.resultSub.textContent = `${formatLength(take.lengthSec)} - ${take.model} - ${take.mock ? 'test signal, no cost' : `estimate ${formatUsd(take.costUsd)}`}`;
+    els.resultSub.textContent = sketch
+      ? `${formatLength(take.lengthSec)} - built-in generator, free - seed ${take.seed ?? 0}`
+      : `${formatLength(take.lengthSec)} - ${take.model} - ${take.mock ? 'test signal, no cost' : `estimate ${formatUsd(take.costUsd)}`}`;
+    els.rawLabel.textContent = sketch ? 'Raw (before the chain)' : 'Raw (from the music AI)';
     els.up.setAttribute('aria-pressed', String(take.rating === 1));
     els.down.setAttribute('aria-pressed', String(take.rating === -1));
-    els.downloadRaw.setAttribute('href', `${API}audio/${take.audioFile}`);
-    els.downloadRaw.setAttribute('download', take.audioFile);
+    if (sketch) {
+      if (this.rawUrl) els.downloadRaw.setAttribute('href', this.rawUrl);
+      else els.downloadRaw.removeAttribute('href');
+      els.downloadRaw.setAttribute('download', `${take.id}-raw.wav`);
+    } else {
+      els.downloadRaw.setAttribute('href', `${API}audio/${take.audioFile}`);
+      els.downloadRaw.setAttribute('download', take.audioFile);
+    }
     els.downloadLofi.disabled = this.lofi === null;
     const stemCost = take.mock ? 0 : estimateCost(take.lengthSec, { stems: true, usdPerMinute: this.usdPerMinute() }).lines[1].usd;
-    els.stemsBtn.hidden = !take.vocals && !take.mock;
+    els.stemsBtn.hidden = sketch || (!take.vocals && !take.mock);
     els.stemsBtn.disabled = take.stems !== null || this.busy;
     els.stemsBtn.lastElementChild!.textContent = take.stems ? 'Vocals separated' : `Separate vocals (${take.mock ? 'free' : `about ${formatUsd(stemCost)}`})`;
     els.stemsBtn.title = 'Splits the song into vocals and the rest, so the vocal blur knob can act on the voice alone';
@@ -908,9 +1084,16 @@ export class StyleLab {
     const m = report.master;
     const row = (label: string, value: string, note = ''): HTMLElement =>
       h('tr', null, h('th', { scope: 'row' }, label), h('td', null, value), h('td', { class: 'sl-metric-note' }, note));
+    table.append(h('caption', null, 'Measured on the lo-fi version'));
+    const sketch = this.decoded?.id === this.current?.id ? this.decoded?.sketch : null;
+    if (sketch) {
+      table.append(
+        row('Key and tempo', `${sketch.keyLabel}, ${sketch.tempo} BPM`, `${sketch.bars} bars`),
+        row('Parts', String(sketch.tracks.length), sketch.tracks.map((t) => t.label).join(', ')),
+      );
+    }
     table.append(
-      h('caption', null, 'Measured on the lo-fi version'),
-      row('Loudness', `${db(m.lufs)} LUFS`, `target ${TARGET_LUFS}; raw file was ${db(report.inputLufs)} LUFS`),
+      row('Loudness', `${db(m.lufs)} LUFS`, `target ${TARGET_LUFS}; raw was ${db(report.inputLufs)} LUFS`),
       row('Peak', `${db(m.peakDb, 2)} dBFS`, `between samples ${db(m.truePeakDb, 2)} dBFS; must stay below -1`),
       row('Limiter', m.limiter.maxReductionDb > 0 ? `${db(m.limiter.maxReductionDb)} dB at most` : 'did not act', m.limiter.maxReductionDb > 0 ? `on ${(m.limiter.limitedShare * 100).toFixed(1)}% of the samples` : ''),
       row('Length', formatLength(report.durationSec), `raw ${formatLength(report.inputDurationSec)}`),
@@ -923,7 +1106,7 @@ export class StyleLab {
       row('High-cut', report.highCutHz === null ? 'off' : `${(report.highCutHz / 1000).toFixed(1)} kHz`, `spectral centroid ${Math.round(report.inputCentroidHz)} -> ${Math.round(report.centroidHz)} Hz`),
       row('Stereo side level', `${db(report.sideDb)} dB`, `raw ${db(report.inputSideDb)} dB (side against mid)`),
       row('Hiss', report.hissDb === null ? 'off' : `${report.hissDb} dBFS RMS`, report.hissDb === null ? '' : `${(m.lufs - report.hissDb).toFixed(0)} dB under the music`),
-      row('Vocal blur', report.vocalBlurApplied ? 'on the vocal stem' : report.settings.vocalBlur > 0 ? 'not applied: no stems yet' : 'off'),
+      row('Vocal blur', report.vocalBlurApplied ? 'on the vocal stem' : report.settings.vocalBlur > 0 ? 'not applied: no vocal stem' : 'off'),
     );
   }
 
@@ -944,6 +1127,49 @@ export class StyleLab {
     confirm.showModal();
   }
 
+  private onGenerate(): void {
+    if (this.state.engine === 'sketch') void this.generateSketch();
+    else this.askGenerate();
+  }
+
+  /** The free path: a new seed, a take in localStorage, audio made right here. */
+  private async generateSketch(): Promise<void> {
+    const { state } = this;
+    const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+    const now = new Date();
+    const take: StyleTake = {
+      engine: 'sketch',
+      seed,
+      id: `sk-${now.getTime().toString(36)}-${seed.toString(36)}`,
+      createdAt: now.toISOString(),
+      profileA: state.a,
+      profileB: state.b,
+      mix: state.b ? state.mix : 0,
+      vocals: state.vocals,
+      lengthSec: state.lengthSec,
+      words: state.words,
+      prompt: '',
+      lyrics: '',
+      body: null,
+      model: 'built-in',
+      costUsd: 0,
+      mock: false,
+      audioFile: '',
+      stems: null,
+      fx: state.fx,
+      rating: 0,
+      note: '',
+    };
+    this.setBusy(true);
+    try {
+      this.saveLocalTakes([take, ...this.localTakes()]);
+      this.mergeTakes();
+      await this.loadTake(take);
+    } finally {
+      this.setBusy(false);
+    }
+  }
+
   private askGenerate(): void {
     const { state } = this;
     const mock = this.isMock();
@@ -959,7 +1185,7 @@ export class StyleLab {
             ...cost.lines.map((l) => h('tr', null, h('td', null, l.label), h('td', null, formatUsd(l.usd)))),
             h('tr', { class: 'sl-cost-total' }, h('td', null, 'Estimated total'), h('td', null, formatUsd(cost.usd))),
           ),
-          h('p', { class: 'sl-fine' }, `Estimate from the public price list (${PRICE_SOURCE}). On a subscription it comes out of your credits. The real charge is whatever ElevenLabs bills.`),
+          h('p', { class: 'sl-fine' }, `Estimate from the public price list (${PRICE_SOURCE}). On a subscription it comes out of your included minutes. The real charge is whatever ElevenLabs bills. The built-in generator is free.`),
         ];
     body.push(h('h3', null, 'What is sent'), h('pre', { class: 'sl-request' }, this.els.requestPre.textContent ?? ''));
     this.openConfirm(body, mock ? 'Generate the test signal' : `Generate for about ${formatUsd(usd)}`, () => void this.generate(usd));
@@ -980,7 +1206,8 @@ export class StyleLab {
     this.setBusy(true);
     try {
       const take = await api<StyleTake>('compose', postJson(payload));
-      this.takes = [take, ...this.takes.filter((t) => t.id !== take.id)];
+      this.serverTakes = [take, ...this.serverTakes.filter((t) => t.id !== take.id)];
+      this.mergeTakes();
       this.host.toast(take.mock ? 'Test signal ready.' : 'Generated. Running the lo-fi chain.');
       await this.loadTake(take);
     } catch (err) {
@@ -994,7 +1221,7 @@ export class StyleLab {
 
   private askStems(): void {
     const take = this.current;
-    if (!take || take.stems) return;
+    if (!take || take.stems || isSketch(take)) return;
     const usd = take.mock ? 0 : estimateCost(take.lengthSec, { stems: true, usdPerMinute: this.usdPerMinute() }).lines[1].usd;
     this.openConfirm(
       [
@@ -1026,37 +1253,52 @@ export class StyleLab {
     }
   }
 
+  /** Puts a changed take back where it lives (localStorage or the server list). */
   private replaceTake(take: StyleTake): void {
-    this.takes = this.takes.map((t) => (t.id === take.id ? take : t));
+    if (isSketch(take)) this.saveLocalTakes(this.localTakes().map((t) => (t.id === take.id ? take : t)));
+    else this.serverTakes = this.serverTakes.map((t) => (t.id === take.id ? take : t));
+    this.mergeTakes();
     if (this.current?.id === take.id) this.current = take;
     this.renderTakes();
     this.refreshResult();
+  }
+
+  /** Saves a change to a take: locally for the built-in generator, on the server for the music AI. */
+  private async patchTake(take: StyleTake, patch: Partial<Pick<StyleTake, 'fx' | 'rating'>>): Promise<void> {
+    if (isSketch(take)) this.replaceTake({ ...take, ...patch });
+    else this.replaceTake(await api<StyleTake>(`takes/${take.id}`, postJson(patch)));
   }
 
   private async rate(value: 1 | -1): Promise<void> {
     const take = this.current;
     if (!take) return;
     try {
-      this.replaceTake(await api<StyleTake>(`takes/${take.id}`, postJson({ rating: take.rating === value ? 0 : value })));
+      await this.patchTake(take, { rating: take.rating === value ? 0 : value });
     } catch (err) {
       this.host.toast(err instanceof Error ? err.message : String(err));
     }
   }
 
   private async deleteTake(take: StyleTake): Promise<void> {
-    if (!window.confirm(`Delete this generation and its files?${take.mock ? '' : ' It was paid for.'}`)) return;
-    try {
-      await api<{ ok: boolean }>(`takes/${take.id}`, { method: 'DELETE' });
-    } catch (err) {
-      this.host.toast(err instanceof Error ? err.message : String(err));
-      return;
+    const paid = !isSketch(take) && !take.mock;
+    if (!window.confirm(`Delete this generation?${paid ? ' It was paid for.' : ''}`)) return;
+    if (isSketch(take)) {
+      this.saveLocalTakes(this.localTakes().filter((t) => t.id !== take.id));
+    } else {
+      try {
+        await api<{ ok: boolean }>(`takes/${take.id}`, { method: 'DELETE' });
+      } catch (err) {
+        this.host.toast(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      this.serverTakes = this.serverTakes.filter((t) => t.id !== take.id);
     }
-    this.takes = this.takes.filter((t) => t.id !== take.id);
+    this.mergeTakes();
     if (this.current?.id === take.id) {
       this.current = null;
       this.decoded = null;
       this.setLofi(null);
-      this.els.rawAudio.removeAttribute('src');
+      this.setRaw(null);
     }
     this.renderTakes();
     this.refreshResult();
@@ -1072,7 +1314,8 @@ export class StyleLab {
     this.refreshFx();
     this.renderTakes();
     this.setLofi(null);
-    this.els.rawAudio.src = `${API}audio/${take.audioFile}`;
+    if (isSketch(take)) this.setRaw(null);
+    else this.setRaw(`${API}audio/${take.audioFile}`, false);
     this.refreshResult();
     await this.runChain();
   }
@@ -1088,6 +1331,18 @@ export class StyleLab {
     window.clearTimeout(this.chainTimer);
     if (!this.current) return;
     this.chainTimer = window.setTimeout(() => void this.runChain(), CHAIN_DEBOUNCE_MS);
+  }
+
+  /** The raw player: a server file, or a blob made here (which this object then owns). */
+  private setRaw(url: string | null, owned = true): void {
+    const audio = this.els.rawAudio;
+    if (this.rawUrl) URL.revokeObjectURL(this.rawUrl);
+    this.rawUrl = url && owned ? url : null;
+    if (url) audio.src = url;
+    else {
+      audio.removeAttribute('src');
+      audio.load();
+    }
   }
 
   private setLofi(next: { pcm: StereoPcm; report: PostFxReport } | null): void {
@@ -1116,25 +1371,41 @@ export class StyleLab {
     }
   }
 
+  /** The audio of a take before the chain: synthesised here, or fetched and decoded. */
+  private async decode(take: StyleTake): Promise<Decoded> {
+    if (isSketch(take)) {
+      await nextPaint();
+      const sketch = makeSketch(sketchRequestOf(take));
+      const audio = renderSketch(sketch, SAMPLE_RATE);
+      return { id: take.id, full: audio.full, stems: audio.stems, sketch };
+    }
+    const load = async (file: string): Promise<StereoPcm> => {
+      const res = await fetch(`${API}audio/${file}`);
+      if (!res.ok) throw new Error(`Could not load ${file}.`);
+      return decodeToStereo(await res.arrayBuffer());
+    };
+    const full = await load(take.audioFile);
+    const stems = take.stems ? { vocals: await load(take.stems.vocals), backing: await load(take.stems.backing) } : null;
+    return { id: take.id, full, stems, sketch: null };
+  }
+
   private async runChain(): Promise<void> {
     const take = this.current;
     if (!take) return;
     const token = ++this.chainToken;
     const status = this.els.chainStatus;
-    status.textContent = 'Rendering the lo-fi version...';
     status.classList.remove('is-error');
     try {
       if (this.decoded?.id !== take.id) {
-        const load = async (file: string): Promise<StereoPcm> => {
-          const res = await fetch(`${API}audio/${file}`);
-          if (!res.ok) throw new Error(`Could not load ${file}.`);
-          return decodeToStereo(await res.arrayBuffer());
-        };
-        const full = await load(take.audioFile);
-        const stems = take.stems ? { vocals: await load(take.stems.vocals), backing: await load(take.stems.backing) } : null;
+        status.textContent = isSketch(take) ? 'Composing and synthesising...' : 'Loading...';
+        const decoded = await this.decode(take);
         if (token !== this.chainToken) return;
-        this.decoded = { id: take.id, full, stems };
+        this.decoded = decoded;
+        if (isSketch(take)) {
+          this.setRaw(URL.createObjectURL(new Blob([encodeWav(decoded.full, SAMPLE_RATE)], { type: 'audio/wav' })));
+        }
       }
+      status.textContent = 'Rendering the lo-fi version...';
       const fx = this.state.fx;
       const result = await renderPostFx(
         { sampleRate: SAMPLE_RATE, full: this.decoded.full, stems: this.decoded.stems },
@@ -1145,14 +1416,10 @@ export class StyleLab {
       this.setLofi({ pcm: result.pcm, report: result.report });
       status.textContent = '';
       this.refreshResult();
-      if (JSON.stringify(take.fx) !== JSON.stringify(fx)) {
-        void api<StyleTake>(`takes/${take.id}`, postJson({ fx }))
-          .then((updated) => this.replaceTake(updated))
-          .catch(() => undefined);
-      }
+      if (JSON.stringify(take.fx) !== JSON.stringify(fx)) void this.patchTake(take, { fx }).catch(() => undefined);
     } catch (err) {
       if (token !== this.chainToken) return;
-      status.textContent = `The chain failed: ${err instanceof Error ? err.message : String(err)}`;
+      status.textContent = `It failed: ${err instanceof Error ? err.message : String(err)}`;
       status.classList.add('is-error');
     }
   }
