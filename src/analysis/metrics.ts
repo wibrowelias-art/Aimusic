@@ -1151,10 +1151,14 @@ function strongestModulation(
 export interface TargetExtras {
   /** Silence ratio of the PIANO stem (measureAudio on the piano stem, default threshold). */
   pianoSilenceRatio?: number;
-  /** Measured RT60 of the generated impulse response, seconds. */
+  /** Measured RT60 of the generated impulse response in the 500-1000 Hz band, seconds. */
   rt60Sec?: number;
   /** The reverbSize the impulse response was generated for, seconds. */
   requestedRt60Sec?: number;
+  /** Measured broadband RT60 of the impulse response, seconds (checked against requestedRt60Sec). */
+  rt60BroadSec?: number;
+  /** Seconds from the last piano onset until piano + pad stay below the tail threshold. */
+  ringOutSec?: number;
   /**
    * Tail of piano + pad in seconds (`tailSecAfter` on the sum of the two stems). When given it
    * is checked instead of `metrics.tailSec`: in a mix the noise bed outlasts the instruments.
@@ -1228,6 +1232,19 @@ export function checkAgainstTargets(metrics: AudioMetrics, extra: TargetExtras =
         );
       }
     }
+  }
+  if (extra.rt60BroadSec !== undefined && extra.requestedRt60Sec !== undefined) {
+    const ratio = extra.rt60BroadSec / extra.requestedRt60Sec;
+    if (!inside(ratio, T.rt60BroadRatio)) {
+      failures.push(
+        `broadband RT60 ${num(extra.rt60BroadSec, 2)} s is ${num(ratio, 3)} x the requested ${num(extra.requestedRt60Sec, 2)} s (allowed ${T.rt60BroadRatio.min} .. ${T.rt60BroadRatio.max})`,
+      );
+    }
+  }
+  if (extra.ringOutSec !== undefined && !inside(extra.ringOutSec, T.ringOutSec)) {
+    failures.push(
+      `ring-out ${num(extra.ringOutSec, 2)} s after the last onset is outside ${T.ringOutSec.min} .. ${T.ringOutSec.max} s`,
+    );
   }
   return { ok: failures.length === 0, failures };
 }

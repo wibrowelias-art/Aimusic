@@ -27,8 +27,10 @@ describe('buildReverbIR', () => {
     console.log(
       `RT60 request ${rt} s: broadband T30 ${broad.toFixed(2)} s, ${REVERB_REF_BAND_HZ[0]}-${REVERB_REF_BAND_HZ[1]} Hz ${mid.toFixed(2)} s, above 4 kHz ${high.toFixed(2)} s`,
     );
-    expect(Math.abs(broad - rt) / rt).toBeLessThan(AUDIO_TARGETS.rt60Tolerance);
-    expect(Math.abs(mid - rt) / rt).toBeLessThan(0.03);
+    // The knob means the mid band; the damped highs pull the broadband figure below it.
+    expect(Math.abs(mid - rt) / rt).toBeLessThan(Math.min(0.03, AUDIO_TARGETS.rt60Tolerance));
+    expect(broad / rt).toBeGreaterThanOrEqual(AUDIO_TARGETS.rt60BroadRatio.min);
+    expect(broad / rt).toBeLessThanOrEqual(AUDIO_TARGETS.rt60BroadRatio.max);
     // Damping: highs decay faster than mids.
     expect(high).toBeLessThan(mid * 0.85);
     expect(high).toBeGreaterThan(mid * 0.4);

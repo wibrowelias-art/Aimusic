@@ -5,6 +5,7 @@ import {
   formatMetricsRow,
   measureAudio,
   METRICS_TABLE_HEADER,
+  tailSecAfter,
   type AudioMetrics,
 } from '../../src/analysis';
 import { add, amp, concat, decayFrom, hardClip, scale, sine, SR } from '../helpers/signals';
@@ -73,7 +74,8 @@ describe('checkAgainstTargets', () => {
       [{ spectralCentroidHz: 0 }, false, /^spectral centroid 0 Hz/],
       [{ tailSec: AUDIO_TARGETS.tailSec.min }, true, /tail/],
       [{ tailSec: AUDIO_TARGETS.tailSec.max }, true, /tail/],
-      [{ tailSec: 0.4 }, false, /^tail 0\.40 s \(to -60 dBFS\) is outside 2 \.\. 14 s$/],
+      [{ tailSec: 0.4 }, true, /tail/],
+      [{ tailSec: -0.1 }, false, /^tail -0\.10 s \(to -60 dBFS\) is outside 0 \.\. 14 s$/],
       [{ tailSec: 15 }, false, /^tail 15\.00 s/],
       [{ tailSec: NaN }, false, /^tail NaN s/],
       [{ dcOffset: NaN }, false, /^DC offset NaN/],
@@ -89,14 +91,25 @@ describe('checkAgainstTargets', () => {
   });
 
   it('tail: the piano + pad tail given as an extra is checked instead of the tail of the mix', () => {
-    // Mix tail 6.55 s (noise bed), instruments 0.2 s: the instruments count.
-    const mix = with_({ tailSec: 6.55 });
-    expect(checkAgainstTargets(mix).ok).toBe(true);
-    expect(checkAgainstTargets(mix, { tailSec: 0.2 }).failures).toEqual([
-      'tail 0.20 s (to -60 dBFS) is outside 2 .. 14 s',
+    // Mix tail 16.55 s (noise bed), instruments 0.2 s: the instruments count.
+    const mix = with_({ tailSec: 16.55 });
+    expect(checkAgainstTargets(mix).ok).toBe(false);
+    expect(checkAgainstTargets(mix, { tailSec: 0.2 }).ok).toBe(true);
+    expect(checkAgainstTargets(with_({ tailSec: 0.2 }), { tailSec: 15.5 }).failures).toEqual([
+      'tail 15.50 s (to -60 dBFS) is outside 0 .. 14 s',
     ]);
-    expect(checkAgainstTargets(with_({ tailSec: 0.2 }), { tailSec: 2.75 }).ok).toBe(true);
     expect(checkAgainstTargets(with_({ tailSec: null }), { tailSec: 20 }).ok).toBe(false);
+  });
+
+  it('ring-out after the last onset: only checked when given', () => {
+    expect(AUDIO_TARGETS.ringOutSec).toEqual({ min: 3, max: 30 });
+    expect(checkAgainstTargets(IN_RANGE, { ringOutSec: 3 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { ringOutSec: 30 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { ringOutSec: 1.2 }).failures).toEqual([
+      'ring-out 1.20 s after the last onset is outside 3 .. 30 s',
+    ]);
+    expect(checkAgainstTargets(IN_RANGE, { ringOutSec: 31 }).ok).toBe(false);
+    expect(checkAgainstTargets(IN_RANGE, { ringOutSec: NaN }).ok).toBe(false);
   });
 
   it('piano silence ratio: only checked when given', () => {
@@ -110,26 +123,44 @@ describe('checkAgainstTargets', () => {
   });
 
   it('RT60: absolute bounds, and the tolerance against the requested size', () => {
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 3 }).ok).toBe(true);
+    // Mid-band RT60: the 3..6 s knob range with 5 % measuring margin.
+    expect(AUDIO_TARGETS.rt60Sec).toEqual({ min: 2.85, max: 6.3 });
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 2.985 }).ok).toBe(true);
     expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 6 }).ok).toBe(true);
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 2.9 }).failures).toEqual(['RT60 2.90 s is outside 3 .. 6 s']);
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 6.5 }).failures).toEqual(['RT60 6.50 s is outside 3 .. 6 s']);
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 2.8 }).failures).toEqual(['RT60 2.80 s is outside 2.85 .. 6.3 s']);
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 6.5 }).failures).toEqual(['RT60 6.50 s is outside 2.85 .. 6.3 s']);
     expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 0 }).ok).toBe(false);
     expect(checkAgainstTargets(IN_RANGE, { rt60Sec: NaN }).ok).toBe(false);
-    // 20 % tolerance around the request.
-    expect(AUDIO_TARGETS.rt60Tolerance).toBe(0.2);
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 4.0, requestedRt60Sec: 5 }).ok).toBe(true);
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 6.0, requestedRt60Sec: 5 }).ok).toBe(true);
-    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 3.9, requestedRt60Sec: 5 }).failures).toEqual([
-      'RT60 3.90 s deviates 22.0 % from the requested 5.00 s (allowed 20 %)',
+    // 5 % tolerance around the request.
+    expect(AUDIO_TARGETS.rt60Tolerance).toBe(0.05);
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 4.8, requestedRt60Sec: 5 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 5.2, requestedRt60Sec: 5 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 4.6, requestedRt60Sec: 5 }).failures).toEqual([
+      'RT60 4.60 s deviates 8.0 % from the requested 5.00 s (allowed 5 %)',
     ]);
     // Both rules can fail at once.
     expect(checkAgainstTargets(IN_RANGE, { rt60Sec: 2.3, requestedRt60Sec: 3 }).failures).toHaveLength(2);
   });
 
+  it('broadband RT60: a ratio to the requested size, only checked when both are given', () => {
+    expect(AUDIO_TARGETS.rt60BroadRatio).toEqual({ min: 0.85, max: 1.05 });
+    expect(checkAgainstTargets(IN_RANGE, { rt60BroadSec: 4.21, requestedRt60Sec: 4.5 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { rt60BroadSec: 1 }).ok).toBe(true);
+    expect(checkAgainstTargets(IN_RANGE, { rt60BroadSec: 3.6, requestedRt60Sec: 4.5 }).failures).toEqual([
+      'broadband RT60 3.60 s is 0.800 x the requested 4.50 s (allowed 0.85 .. 1.05)',
+    ]);
+    expect(checkAgainstTargets(IN_RANGE, { rt60BroadSec: 5, requestedRt60Sec: 4.5 }).ok).toBe(false);
+  });
+
   it('reports every violated target, in a fixed order', () => {
-    const bad = with_({ peakDb: 0, clippedSamples: 120, rmsDb: -10, spectralCentroidHz: 3000, tailSec: 0.1 });
-    const result = checkAgainstTargets(bad, { pianoSilenceRatio: 0.95, rt60Sec: 8, requestedRt60Sec: 6 });
+    const bad = with_({ peakDb: 0, clippedSamples: 120, rmsDb: -10, spectralCentroidHz: 3000, tailSec: 20 });
+    const result = checkAgainstTargets(bad, {
+      pianoSilenceRatio: 0.95,
+      rt60Sec: 8,
+      requestedRt60Sec: 6,
+      rt60BroadSec: 7,
+      ringOutSec: 1,
+    });
     expect(result.ok).toBe(false);
     expect(result.failures.map((f) => f.split(' ')[0])).toEqual([
       'peak',
@@ -140,6 +171,8 @@ describe('checkAgainstTargets', () => {
       'piano',
       'RT60',
       'RT60',
+      'broadband',
+      'ring-out',
     ]);
   });
 });
@@ -182,10 +215,17 @@ describe('checkAgainstTargets on measured audio', () => {
     const highCentroid = checkAgainstTargets(measureAudio([withHighTone], SR, { musicEndSec }));
     expect(highCentroid.failures.some((f) => f.startsWith('spectral centroid'))).toBe(true);
 
-    const cut = checkAgainstTargets(measureAudio([passing.subarray(0, SR * 11)], SR, { musicEndSec }));
-    expect(cut.failures).toEqual(['tail 1.00 s (to -60 dBFS) is outside 2 .. 14 s']);
+    // Cut 2.5 s after the last note starts (it starts at 8 s): the ring-out is too short.
+    const cutSignal = passing.subarray(0, SR * 10.5);
+    const cut = checkAgainstTargets(measureAudio([cutSignal], SR, { musicEndSec }), {
+      ringOutSec: tailSecAfter([cutSignal], SR, 8),
+    });
+    expect(cut.failures).toEqual(['ring-out 2.50 s after the last onset is outside 3 .. 30 s']);
 
-    const empty = checkAgainstTargets(measureAudio([], SR, { musicEndSec }), { pianoSilenceRatio: 1 });
+    const empty = checkAgainstTargets(measureAudio([], SR, { musicEndSec }), {
+      pianoSilenceRatio: 1,
+      ringOutSec: tailSecAfter([], SR, 8),
+    });
     expect(empty.ok).toBe(false);
     expect(empty.failures.length).toBeGreaterThanOrEqual(5);
   });
