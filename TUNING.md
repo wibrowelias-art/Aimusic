@@ -252,3 +252,54 @@ Run `npm install && npm run dev`, open the printed URL, press Generate.
    knob do you reach for first in each? Knobs: the ranges in `PRESETS` (`src/engine/params.ts`).
 
    Answer:
+
+## 3. Phase 3 (chat control)
+
+No change to the composer or to the sound constants. The text box maps words to knob moves with fixed rules
+(`src/chat/rules.ts`, 40 tests in `tests/chat/rules.test.ts`). One step of each word:
+
+| Words (examples) | Knob moves |
+| --- | --- |
+| slower / faster | tempo -6 / +6 BPM |
+| sadder / happier | mode one step towards minor / major, tempo -4 / +3 BPM, register -2 / +2 semitones |
+| more space / less space | silent bars +12 / -12 points, density -0.3 / +0.3 notes per bar |
+| sparser, calmer / busier | density -0.4 / +0.5, silent bars +8 / -10 points |
+| softer, gentler | density -0.2, silent bars +4 points, lo-fi +5 points (there is no knob for touch) |
+| more reverb / drier | reverb +0.8 / -0.8 s; "cave" sets it to 6 s |
+| brighter, higher / darker, lower | register +4 / -4 semitones, lo-fi -6 / +6 points |
+| dreamier | mode lydian, reverb +0.6 s, pad +10 points, register +3 |
+| warmer / colder | lo-fi +12 / -12 points, register -2 / +3, reverb -0.3 / +0.4 s |
+| more lo-fi, tape / cleaner | lo-fi +15 / -15 points |
+| add rain / light rain / heavy rain / no rain | rain to at least 25 % then +10 points (35 % from zero) / 20 % / at least 75 % / 0 |
+| add pad / no pad / just piano | pad to at least 20 % then +12 points / 0 / pad and rain 0 |
+| longer / shorter | length +20 / -20 s |
+
+"a bit" halves a step, "much" doubles it, "less / too / not so" reverses it, "no / remove" switches a level off.
+Numbers work too ("tempo 60", "in D minor", "2 minutes", "reverb 5s"). Out-of-range numbers are clamped and the
+answer says so. The answer always lists every knob that moved with its old and new value.
+
+Requests for existing music are left out and the box says so: "like <name>", "in the style of ...", "play ...",
+quoted titles, "melody / chords from ...", note or chord lists. In the UI check, "make it sound like Sweden by
+C418, and a bit brighter" moved only the register (+2 semitones) and showed the refusal with the left-out part.
+Chat never changes the seed: the same take is re-made with the new settings.
+
+Also in this phase: chord roots and key names are now spelled per key and mode with seven different letters
+(Ab dorian shows Gb, not F#; G# is used instead of Ab for Ab aeolian because it needs 5 accidentals instead
+of 7). Labels only: no note changed, the regression pins are untouched.
+
+### Listening questions for Elias (Phase 3)
+
+1. Type **sadder** on a Warm take, then again. Each step is: mode one step towards minor, 4 BPM slower, 2
+   semitones lower. Is one step too timid, right, or too much?
+
+   Answer:
+
+2. Type **more space**, then **slower**. Is the difference after one step big enough to be worth a message,
+   or should a step be larger?
+
+   Answer:
+
+3. Type **add rain** (35 %), then **light rain** (20 %) and **heavy rain** (75 %). Does the rain sit behind the
+   piano at 35 %? Is 75 % still usable? Knob: `RAIN_RMS_DB_AT_FULL` (-34 dBFS at rain 100 %).
+
+   Answer:
