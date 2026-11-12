@@ -40,6 +40,10 @@ second engine. "Ambient piano (offline)" is the seeded piano engine. The owner i
    the hit strength per sixteenth of the bar (16 numbers) plus brightness and reverb length
    (`src/analysis/rhythm.ts`). Still no pitches, no melody, no chords, and no audio is kept.
    The box stays behind its "this song is mine" tick.
+4c. "My recording + a new melody on top" (same box, asked for by Elias on 2026-11-12): the
+   owner's own recording is played as it is and a newly composed melody in its key is laid
+   over it. The recording is held in memory only (never stored, never uploaded, never in the
+   repo); the melody is new, not read from the file.
 
 ## Stack and conventions
 

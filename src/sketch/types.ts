@@ -77,6 +77,10 @@ export interface SketchRequest {
    * (numbers only, see analysis/rhythm.ts). The rhythmic parts then play on that pattern.
    */
   match?: { tempoBpm: number; grid: number[] } | null;
+  /** Forces the key and mode (used when a new melody is laid over the owner's own recording). */
+  key?: { pc: number; mode: Mode } | null;
+  /** 'melody': only the melody part (and the voice, when vocals are on) is arranged. */
+  only?: 'melody' | null;
 }
 
 /** What the rules made of the owner's words. */

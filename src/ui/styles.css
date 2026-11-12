@@ -1738,3 +1738,9 @@ a.btn {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
+
+.sl-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

@@ -13,6 +13,12 @@ export interface StyleTake {
   seed?: number;
   /** 'sketch' takes made with "match my own song": the tempo and hit pattern that were read (numbers only). */
   match?: { tempoBpm: number; grid: number[] } | null;
+  /**
+   * "My recording + a new melody on top": this take is the owner's own recording with a new
+   * melody over it. The recording itself is never stored, so such a take only lives until
+   * the page is closed.
+   */
+  overlay?: { dipDb: number; melodyDb: number; offsetSec: number; keyPc: number; mode: string } | null;
   id: string;
   /** ISO time the server wrote the file. */
   createdAt: string;

@@ -32,17 +32,20 @@ import { renderPostFx, type PostFxReport } from '../postfx/chain';
 import { TARGET_LUFS } from '../postfx/constants';
 import {
   normalizePostFx,
+  POSTFX_CLEAN,
   POSTFX_KEYS,
   POSTFX_SPECS,
   postFxLabel,
   type PostFxNumericKey,
   type PostFxSettings,
 } from '../postfx/settings';
-import { makeSketch, matchFx, parseWords, renderSketch, type Sketch, type SketchRequest } from '../sketch';
+import type { Mode } from '../engine/types';
+import { DIP_MAX_DB, makeSketch, matchFx, overlayMelody, parseWords, renderSketch, type Sketch, type SketchRequest } from '../sketch';
 import { browserStore, readJson, writeJson, type KeyValueStore } from '../store/storage';
 import { estimateCost, formatLength, formatUsd, MUSIC_USD_PER_MINUTE, PRICE_SOURCE } from '../style/cost';
 import { checkDescriptors, GUARD_RULE } from '../style/guard';
 import { draftLyrics, parseTopics } from '../style/lyrics';
+import { KEY_NAMES, MODE_LABELS } from '../engine/params';
 import { FAMILY_IDS, PROFILES } from '../style/profiles';
 import { blendOf, buildPrompt } from '../style/prompt';
 import { buildComposeBody, DEFAULT_MODEL, MODELS, StyleApiError } from '../style/request';
@@ -81,6 +84,12 @@ interface LabState {
   fxEdited: boolean;
   /** "Match my own song": numbers read from the owner's file, or null. No audio is kept. */
   match: SongMatch | null;
+  /** True: Generate plays the owner's own recording and lays a new melody over it. */
+  overlay: boolean;
+  /** How far the middle of the recording is dipped to make room, dB. */
+  dipDb: number;
+  /** Loudness of the new melody against the recording, LU. */
+  melodyDb: number;
 }
 
 interface Decoded {
@@ -166,6 +175,8 @@ function sketchRequestOf(take: StyleTake): SketchRequest {
     vocals: take.vocals,
     lengthSec: take.lengthSec,
     match: take.match ?? null,
+    only: take.overlay ? 'melody' : null,
+    key: take.overlay && take.overlay.keyPc >= 0 ? { pc: take.overlay.keyPc, mode: take.overlay.mode as Mode } : null,
   };
 }
 
@@ -182,6 +193,10 @@ export class StyleLab {
   private decoded: Decoded | null = null;
   private lofi: { pcm: StereoPcm; report: PostFxReport; url: string } | null = null;
   private rawUrl: string | null = null;
+  /** The owner's own recording, decoded. Memory only: never stored, gone when the page closes. */
+  private song: StereoPcm | null = null;
+  /** Takes made on top of that recording: they cannot outlive it. */
+  private sessionTakes: StyleTake[] = [];
   private busy = false;
   private chainToken = 0;
   private chainTimer = 0;
@@ -250,6 +265,9 @@ export class StyleLab {
       fx: profile.fx,
       fxEdited: false,
       match: null,
+      overlay: false,
+      dipDb: 0,
+      melodyDb: -8,
     };
   }
 
@@ -279,6 +297,9 @@ export class StyleLab {
       fx: raw.fx ? normalizePostFx(raw.fx) : base.fx,
       fxEdited: raw.fxEdited === true,
       match: raw.match && Array.isArray(raw.match.grid) && typeof raw.match.tempoBpm === 'number' ? raw.match : null,
+      overlay: raw.overlay === true,
+      dipDb: num(raw.dipDb, 0, DIP_MAX_DB, 0),
+      melodyDb: num(raw.melodyDb, -18, 0, -8),
     };
   }
 
@@ -326,7 +347,7 @@ export class StyleLab {
   }
 
   private mergeTakes(): void {
-    this.takes = [...this.localTakes(), ...this.serverTakes].sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1));
+    this.takes = [...this.sessionTakes, ...this.localTakes(), ...this.serverTakes].sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1));
   }
 
   // ------------------------------------------------------------------ build
@@ -445,11 +466,62 @@ export class StyleLab {
         type: 'button',
         onclick: () => {
           this.state.match = null;
+          this.song = null;
           matchFile.value = '';
           this.rebuild();
         },
       },
       'Stop matching',
+    );
+    const overlayOn = h('input', {
+      type: 'checkbox',
+      onchange: () => {
+        this.state.overlay = overlayOn.checked;
+        this.save();
+        this.refreshAll();
+      },
+    });
+    const dipRange = h('input', {
+      type: 'range',
+      class: 'sl-range',
+      min: '0',
+      max: String(DIP_MAX_DB),
+      step: '1',
+      'aria-label': 'Push the original melody back',
+      oninput: () => {
+        this.state.dipDb = Number(dipRange.value);
+        this.save();
+        this.refreshPlan();
+      },
+    });
+    const melodyRange = h('input', {
+      type: 'range',
+      class: 'sl-range',
+      min: '-18',
+      max: '0',
+      step: '1',
+      'aria-label': 'Level of the new melody',
+      oninput: () => {
+        this.state.melodyDb = Number(melodyRange.value);
+        this.save();
+        this.refreshPlan();
+      },
+    });
+    const dipText = h('span', { class: 'sl-mix-text' });
+    const melodyText = h('span', { class: 'sl-mix-text' });
+    const overlayNote = h('p', { class: 'hint' });
+    const overlaySliders = h(
+      'div',
+      { class: 'sl-grid' },
+      h('label', { class: 'field' }, h('span', null, 'Push the original melody back'), dipRange, dipText),
+      h('label', { class: 'field' }, h('span', null, 'Level of the new melody'), melodyRange, melodyText),
+    );
+    const overlayBox = h(
+      'div',
+      { class: 'sl-overlay' },
+      h('label', { class: 'sl-match-own' }, overlayOn, 'Play my recording itself and add a new melody on top'),
+      overlaySliders,
+      overlayNote,
     );
     const matchBox = h(
       'div',
@@ -458,6 +530,7 @@ export class StyleLab {
       h('label', { class: 'sl-match-own' }, matchOwn, 'This song is mine: I made it or I hold the rights to it.'),
       h('div', { class: 'sl-row' }, matchFile, matchClear),
       matchInfo,
+      overlayBox,
       h(
         'p',
         { class: 'hint' },
@@ -766,6 +839,14 @@ export class StyleLab {
       planWords,
       matchInfo,
       matchClear,
+      overlayBox,
+      overlayOn,
+      overlaySliders,
+      overlayNote,
+      dipRange,
+      dipText,
+      melodyRange,
+      melodyText,
       promptPanel,
       promptText,
       promptNote,
@@ -902,9 +983,9 @@ export class StyleLab {
     if (!file) return;
     this.els.matchInfo.textContent = 'Reading...';
     try {
-      const ctx = new OfflineAudioContext(2, 1, 22050);
+      const ctx = new OfflineAudioContext(2, 1, SAMPLE_RATE);
       const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
-      const frames = Math.min(buffer.length, 22050 * 300);
+      const frames = Math.min(buffer.length, SAMPLE_RATE * 300);
       const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch).slice(0, frames));
       await nextPaint();
       const match = matchSong(channels, buffer.sampleRate);
@@ -913,6 +994,7 @@ export class StyleLab {
         return;
       }
       this.state.match = match;
+      this.song = [channels[0], channels[1] ?? channels[0].slice()];
       this.state.fxEdited = false;
       this.rebuild();
     } catch {
@@ -926,6 +1008,18 @@ export class StyleLab {
     if (state.engine !== 'sketch') return;
     const m = state.match;
     els.matchClear.hidden = m === null;
+    els.overlayBox.hidden = m === null;
+    els.overlayOn.checked = state.overlay;
+    els.overlaySliders.hidden = !state.overlay;
+    els.dipRange.value = String(state.dipDb);
+    els.melodyRange.value = String(state.melodyDb);
+    els.dipText.textContent = state.dipDb === 0 ? 'off' : `-${state.dipDb} dB around 1.5 kHz, centre only`;
+    els.melodyText.textContent = `${state.melodyDb} dB against the recording`;
+    els.overlayNote.textContent = !state.overlay
+      ? ''
+      : this.song === null
+        ? 'Pick the file again: the recording is only held while the page is open.'
+        : `Your recording plays as it is (its own sounds, background, rhythm and tone). A new melody${m && m.keyPc !== null && m.mode ? ` in its key (${KEY_NAMES[m.keyPc]} ${MODE_LABELS[m.mode].toLowerCase()}, the least certain reading)` : ' (the key of the file was not clear, so it may clash)'} is laid over it. The original melody stays in the recording; the first slider can only push it back roughly. These takes are not kept after the page closes, because the recording is not stored.`;
     if (m) {
       const hits = m.grid.map((v) => (v >= 0.6 ? 'X' : v >= 0.3 ? 'x' : '.')).join('');
       els.matchInfo.textContent = `Matching: ${m.tempoBpm} BPM (read ${m.readTempoBpm}), hits per sixteenth ${hits}, brightness ${m.brightnessHz} Hz, reverb ${m.decaySec === null ? 'not found' : `${m.decaySec.toFixed(1)} s`}.`;
@@ -1214,10 +1308,22 @@ export class StyleLab {
     const { state } = this;
     const seed = crypto.getRandomValues(new Uint32Array(1))[0];
     const now = new Date();
+    const m = state.match;
+    const overlay =
+      state.overlay && m && this.song
+        ? { dipDb: state.dipDb, melodyDb: state.melodyDb, offsetSec: m.offsetSec, keyPc: m.keyPc ?? -1, mode: m.mode ?? 'dorian' }
+        : null;
+    if (overlay && this.song) {
+      // The recording sets the length; the chain starts clean so its tone is kept.
+      state.lengthSec = Math.min(LENGTH_MAX_SEC, Math.max(LENGTH_MIN_SEC, Math.round(this.song[0].length / SAMPLE_RATE)));
+      state.fx = POSTFX_CLEAN;
+      state.fxEdited = true;
+    }
     const take: StyleTake = {
       engine: 'sketch',
       seed,
       match: state.match ? { tempoBpm: state.match.tempoBpm, grid: state.match.grid } : null,
+      overlay,
       id: `sk-${now.getTime().toString(36)}-${seed.toString(36)}`,
       createdAt: now.toISOString(),
       profileA: state.a,
@@ -1240,7 +1346,8 @@ export class StyleLab {
     };
     this.setBusy(true);
     try {
-      this.saveLocalTakes([take, ...this.localTakes()]);
+      if (take.overlay) this.sessionTakes = [take, ...this.sessionTakes];
+      else this.saveLocalTakes([take, ...this.localTakes()]);
       this.mergeTakes();
       await this.loadTake(take);
     } finally {
@@ -1333,7 +1440,8 @@ export class StyleLab {
 
   /** Puts a changed take back where it lives (localStorage or the server list). */
   private replaceTake(take: StyleTake): void {
-    if (isSketch(take)) this.saveLocalTakes(this.localTakes().map((t) => (t.id === take.id ? take : t)));
+    if (take.overlay) this.sessionTakes = this.sessionTakes.map((t) => (t.id === take.id ? take : t));
+    else if (isSketch(take)) this.saveLocalTakes(this.localTakes().map((t) => (t.id === take.id ? take : t)));
     else this.serverTakes = this.serverTakes.map((t) => (t.id === take.id ? take : t));
     this.mergeTakes();
     if (this.current?.id === take.id) this.current = take;
@@ -1360,7 +1468,9 @@ export class StyleLab {
   private async deleteTake(take: StyleTake): Promise<void> {
     const paid = !isSketch(take) && !take.mock;
     if (!window.confirm(`Delete this generation?${paid ? ' It was paid for.' : ''}`)) return;
-    if (isSketch(take)) {
+    if (take.overlay) {
+      this.sessionTakes = this.sessionTakes.filter((t) => t.id !== take.id);
+    } else if (isSketch(take)) {
       this.saveLocalTakes(this.localTakes().filter((t) => t.id !== take.id));
     } else {
       try {
@@ -1455,6 +1565,10 @@ export class StyleLab {
       await nextPaint();
       const sketch = makeSketch(sketchRequestOf(take));
       const audio = renderSketch(sketch, SAMPLE_RATE);
+      if (take.overlay) {
+        if (!this.song) throw new Error('the recording is no longer in memory. Pick the file again and press Generate.');
+        return { id: take.id, full: overlayMelody(this.song, audio.full, take.overlay, SAMPLE_RATE), stems: null, sketch };
+      }
       return { id: take.id, full: audio.full, stems: audio.stems, sketch };
     }
     const load = async (file: string): Promise<StereoPcm> => {

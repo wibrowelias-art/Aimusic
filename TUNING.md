@@ -510,6 +510,26 @@ and amount from the decay length. Not read: pitches, melody, chords. Not possibl
 - Known limits: the bar start is guessed from the energy on the beats; a full mix gives a sparse pattern;
   tempo is read at half or double speed for some material and then folded.
 
+### My recording + a new melody on top (added 2026-11-12, asked for by Elias)
+
+Elias asked for the melody a bit different while the sounds, background, rhythm and tone stay. Chosen scope:
+the uploaded recording itself plays (so sounds, background, rhythm and tone are the recording's own), and a
+new melody from the composer, in the key read from the file and at its tempo, is laid over it from the first
+bar line that was found. Sliders: melody level (-18..0 LU against the recording, default -8) and a dip of
+0..12 dB around 1.5 kHz (Q 0.7) in the centre of the recording. The chain starts clean for these takes.
+
+- Check (`tests/sketch/match.test.ts`): with a silent melody and no dip the recording comes back sample for
+  sample; the melody lands 8 LU (+-1.5) under the recording and only after the offset; a 12 dB dip measures
+  -12 dB at 1.5 kHz and under 1.5 dB at 220 Hz.
+- In the browser, on the lab's own slowcore test piece: 1 part added (small keyboard), result -16.0 LUFS,
+  peak -1.50 dBFS, limiter 3.1 dB at most on 7.5 % of the samples, centroid 619 -> 624 Hz, side level
+  -16.3 -> -16.2 dB (the recording's tone and width stay where they were).
+- Known limits: the original melody is still in the recording (the dip is a blunt tool, it also takes other
+  things around 1.5 kHz down). The key reading is the least certain one: on that test piece (G aeolian) it read
+  F major pentatonic, so the new melody can clash; there is no key override yet. The composer has slight
+  rubato, so the new melody drifts a little against a strict grid. Recordings longer than 4:00 get a melody
+  for the first 4:00 only. Takes are not kept after the page closes.
+
 ### Listening questions for Elias (the five free test pieces)
 
 Three per family. Nothing in the generator or the chain gets tuned before the answers are written down here.

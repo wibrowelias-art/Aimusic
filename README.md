@@ -51,6 +51,9 @@ The two `check:*` scripts need Playwright with Chromium. `style:test` makes MP3s
   tempo, where the hits fall in the bar, its brightness and its reverb length. Guitar, bass and drum parts
   then play on your rhythm and the chain is set to your tone. No melody or chords are read; the notes stay
   new. It cannot reproduce the recording itself.
+  Tick "Play my recording itself and add a new melody on top" to hear your actual recording (its own
+  sounds, background, rhythm and tone) with a new melody in its key over it. The original melody stays
+  in the recording; a slider can push it back roughly. These takes are gone when the page closes.
 
 ### The optional music AI engine
 

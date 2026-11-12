@@ -305,8 +305,10 @@ export function makeSketch(request: SketchRequest): Sketch {
     // A bias can bring in a mode the family does not list, a little.
     return (base > 0 ? base : words.minorBias !== 0 && (words.minorBias > 0) === minor ? 0.1 : 0) * bias;
   });
-  const mode = draw.weighted(MODES, weights);
-  const key = draw.int(0, 11);
+  const drawnMode = draw.weighted(MODES, weights);
+  const drawnKey = draw.int(0, 11);
+  const mode = request.key ? request.key.mode : drawnMode;
+  const key = request.key ? ((request.key.pc % 12) + 12) % 12 : drawnKey;
   const spec = PARAM_SPECS;
   const piece = generate({
     seed: request.seed >>> 0,
@@ -325,6 +327,7 @@ export function makeSketch(request: SketchRequest): Sketch {
   });
 
   let chosen = chooseParts(a, b, t, request.vocals).filter((c) => !words.removeGroups.includes(c.spec.group));
+  if (request.only === 'melody') chosen = chosen.filter((c) => c.spec.slot === 'melody' || c.spec.slot === 'voice');
   for (const group of words.addGroups) {
     if (words.removeGroups.includes(group) || chosen.some((c) => c.spec.group === group)) continue;
     for (const extra of EXTRA_PARTS[group]) {

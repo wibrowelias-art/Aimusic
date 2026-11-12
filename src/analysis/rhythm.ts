@@ -4,6 +4,7 @@
  * (16 numbers). Tone = brightness and reverb length. No pitches, no melody, no chords
  * are read, and no audio is kept. Pure and deterministic.
  */
+import type { Mode } from '../engine/types';
 import { analyseReference, foldTempo } from './reference';
 
 export const RHYTHM_STEPS = 16;
@@ -19,6 +20,13 @@ export interface SongMatch {
   brightnessHz: number;
   /** Reverb / decay length in seconds, null when no free decay was found. */
   decaySec: number | null;
+  /** Key of the file as a general trait (tonic pitch class and mode), null when unclear. */
+  keyPc: number | null;
+  mode: Mode | null;
+  /** Where the first bar line was found, seconds from the start of the file. */
+  offsetSec: number;
+  /** Length of the analysed audio, seconds. */
+  durationSec: number;
 }
 
 /** Rise of the log energy, 100 values per second. */
@@ -72,5 +80,9 @@ export function matchSong(channels: readonly Float32Array[], sampleRate: number)
     grid: grid.map((v) => Math.round((v / max) * 100) / 100),
     brightnessHz: Math.round(traits.brightnessHz),
     decaySec: traits.decaySec,
+    keyPc: traits.keyPc,
+    mode: traits.mode,
+    offsetSec: bestOffset / 100,
+    durationSec: (channels[0]?.length ?? 0) / sampleRate,
   };
 }
