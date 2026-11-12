@@ -41,6 +41,7 @@ import {
   type PresetName,
 } from '../engine/params';
 import { createRng } from '../engine/rng';
+import { keyName } from '../engine/theory';
 import { MODES, type Mode, type NumericParamKey, type Params, type Piece } from '../engine/types';
 import { learnedShifts, sampleParams, type Learned } from '../store/learning';
 import { browserStore, readJson, writeJson, type KeyValueStore } from '../store/storage';
@@ -91,7 +92,7 @@ function randomSeed(): number {
 function takeTitle(take: Take): string {
   const p = take.params;
   const mood = take.preset ? `${PRESETS[take.preset].label} · ` : '';
-  return `#${take.n} ${mood}${KEY_NAMES[p.key]} ${MODE_LABELS[p.mode].toLowerCase()}`;
+  return `#${take.n} ${mood}${keyName(p.key, p.mode)} ${MODE_LABELS[p.mode].toLowerCase()}`;
 }
 
 function takeMeta(take: Take): string {

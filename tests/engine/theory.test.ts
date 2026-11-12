@@ -4,6 +4,7 @@ import {
   CHARACTERISTIC_INTERVAL,
   CHORD_QUALITIES,
   chordName,
+  keyName,
   chordOptions,
   indexAtOrBelow,
   isInScale,
@@ -79,6 +80,38 @@ describe('chord stacks', () => {
     }
   });
 
+  it('spells every scale with seven different letters and as few accidentals as possible', () => {
+    const expectNames = (key: number, mode: (typeof MODES)[number], names: string[]): void => {
+      const scale = makeScale(key, mode);
+      expect(scale.pcs.map((pc) => scale.names[pc])).toEqual(names);
+    };
+    expectNames(0, 'lydian', ['C', 'D', 'E', 'F#', 'G', 'A', 'B']);
+    expectNames(8, 'dorian', ['Ab', 'Bb', 'Cb', 'Db', 'Eb', 'F', 'Gb']);
+    expectNames(8, 'aeolian', ['G#', 'A#', 'B', 'C#', 'D#', 'E', 'F#']);
+    expectNames(3, 'aeolian', ['Eb', 'F', 'Gb', 'Ab', 'Bb', 'Cb', 'Db']);
+    expectNames(6, 'lydian', ['Gb', 'Ab', 'Bb', 'C', 'Db', 'Eb', 'F']);
+    expectNames(6, 'aeolian', ['F#', 'G#', 'A', 'B', 'C#', 'D', 'E']);
+    expectNames(1, 'majorPentatonic', ['Db', 'Eb', 'F', 'Ab', 'Bb']);
+    expectNames(5, 'majorPentatonic', ['F', 'G', 'A', 'C', 'D']);
+    expect(keyName(8, 'aeolian')).toBe('G#');
+    expect(keyName(8, 'dorian')).toBe('Ab');
+    for (const mode of MODES) {
+      for (let key = 0; key < 12; key++) {
+        const scale = makeScale(key, mode);
+        expect(scale.names).toHaveLength(12);
+        const letters = scale.pcs.map((pc) => scale.names[pc][0]);
+        expect(new Set(letters).size).toBe(scale.size);
+        for (const pc of scale.pcs) {
+          // No double sharps or flats, and the name really is that pitch class.
+          expect(scale.names[pc]).toMatch(/^[A-G](#|b)?$/);
+          const natural = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[scale.names[pc][0] as 'C'];
+          const acc = scale.names[pc].endsWith('#') ? 1 : scale.names[pc].endsWith('b') ? -1 : 0;
+          expect((natural + acc + 12) % 12).toBe(pc);
+        }
+      }
+    }
+  });
+
   it('every offered chord lies inside the scale and its label parses back to its tones', () => {
     for (const mode of MODES) {
       for (let key = 0; key < 12; key++) {
@@ -91,7 +124,7 @@ describe('chord stacks', () => {
             const parsed = parseChordName(chord.name);
             expect(parsed.root).toBe(chord.root);
             expect(parsed.pitchClasses.slice().sort()).toEqual(chord.pitchClasses.slice().sort());
-            expect(chord.name).toBe(chordName(chord.root, quality));
+            expect(chord.name).toBe(chordName(chord.root, quality, scale.names));
             // Triad: root, a third or suspended tone, the fifth; all chord tones.
             expect(chord.triad[0]).toBe(chord.root);
             expect(chord.triad[2]).toBe((chord.root + 7) % 12);

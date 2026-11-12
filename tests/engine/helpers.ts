@@ -125,9 +125,13 @@ export const SUFFIX_INTERVALS: Record<string, number[]> = {
 
 /** "Ebmaj7" -> { root: 3, pitchClasses: [3, 7, 10, 2] }. Throws on an unknown label. */
 export function parseChordName(name: string): { root: number; suffix: string; pitchClasses: number[] } {
-  const rootName = name.length > 1 && (name[1] === '#' || name[1] === 'b') ? name.slice(0, 2) : name.slice(0, 1);
-  const root = (KEY_NAMES as readonly string[]).indexOf(rootName);
-  if (root < 0) throw new Error(`unknown root in chord label "${name}"`);
+  // Letter plus accidentals, read independently of the engine's own spelling code.
+  const m = /^([A-G])(#{1,2}|b{1,2})?/.exec(name);
+  if (!m) throw new Error(`unknown root in chord label "${name}"`);
+  const rootName = m[0];
+  const natural = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1] as 'C'];
+  const acc = m[2] === undefined ? 0 : m[2][0] === '#' ? m[2].length : -m[2].length;
+  const root = (((natural + acc) % 12) + 12) % 12;
   const suffix = name.slice(rootName.length);
   const intervals = SUFFIX_INTERVALS[suffix];
   if (!intervals) throw new Error(`unknown suffix in chord label "${name}"`);

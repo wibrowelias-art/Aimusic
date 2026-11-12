@@ -24,12 +24,63 @@ export interface Scale {
   pcs: number[];
   /** Number of tones per octave (5 or 7). */
   size: number;
+  /** Note name of every pitch class 0..11 as it is spelled in this key and mode. */
+  names: string[];
+}
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+const LETTER_PC = [0, 2, 4, 5, 7, 9, 11] as const;
+/** Seven-tone scale that gives a mode its note names (the pentatonic is spelled like its major scale). */
+const SPELLING_INTERVALS: Record<Mode, readonly number[]> = {
+  ...MODE_INTERVALS,
+  majorPentatonic: [0, 2, 4, 5, 7, 9, 11],
+};
+
+/**
+ * Note names of all 12 pitch classes for a key and mode. The seven scale tones get seven
+ * different letters (Ab dorian has Gb, not F#); the tonic is spelled with sharps or flats,
+ * whichever needs fewer accidentals (the KEY_NAMES spelling wins a tie). Pitch classes
+ * outside the scale keep their KEY_NAMES name.
+ */
+export function spellScale(key: number, mode: Mode): string[] {
+  const k = mod(Math.round(key), 12);
+  const intervals = SPELLING_INTERVALS[mode];
+  let best: { cost: number; names: string[] } | null = null;
+  for (let letter = 0; letter < 7; letter++) {
+    const tonicAcc = mod(k - LETTER_PC[letter] + 6, 12) - 6;
+    if (Math.abs(tonicAcc) > 1) continue;
+    const names = [...KEY_NAMES] as string[];
+    let cost = 0;
+    for (let d = 0; d < 7; d++) {
+      const l = (letter + d) % 7;
+      const pc = (k + intervals[d]) % 12;
+      const acc = mod(pc - LETTER_PC[l] + 6, 12) - 6;
+      cost += Math.abs(acc) + (Math.abs(acc) > 1 ? 100 : 0);
+      names[pc] = LETTERS[l] + (acc > 0 ? '#'.repeat(acc) : 'b'.repeat(-acc));
+    }
+    // The usual spelling of the tonic wins a tie.
+    if (names[k] === KEY_NAMES[k]) cost -= 0.5;
+    if (!best || cost < best.cost) best = { cost, names };
+  }
+  return best ? best.names : ([...KEY_NAMES] as string[]);
+}
+
+/** Name of the tonic as it is spelled in this key and mode, e.g. "G#" for G# / Ab aeolian. */
+export function keyName(key: number, mode: Mode): string {
+  return spellScale(key, mode)[mod(Math.round(key), 12)];
 }
 
 export function makeScale(key: number, mode: Mode): Scale {
   const k = mod(Math.round(key), 12);
   const intervals = MODE_INTERVALS[mode];
-  return { key: k, mode, intervals, pcs: intervals.map((i) => (k + i) % 12), size: intervals.length };
+  return {
+    key: k,
+    mode,
+    intervals,
+    pcs: intervals.map((i) => (k + i) % 12),
+    size: intervals.length,
+    names: spellScale(k, mode),
+  };
 }
 
 /** Pitch classes of key + mode, ascending from the tonic. */
@@ -129,8 +180,9 @@ export function chordPitchClasses(root: number, quality: ChordQuality): number[]
   return quality.intervals.map((iv) => (root + iv) % 12);
 }
 
-export function chordName(root: number, quality: ChordQuality): string {
-  return `${KEY_NAMES[mod(root, 12)]}${quality.suffix}`;
+/** Chord label. `names` = Scale.names for the spelling of the key; default: KEY_NAMES. */
+export function chordName(root: number, quality: ChordQuality, names: readonly string[] = KEY_NAMES): string {
+  return `${names[mod(root, 12)]}${quality.suffix}`;
 }
 
 export interface ChordInfo {
@@ -154,7 +206,7 @@ export function buildChord(scale: Scale, degree: number, quality: ChordQuality):
     root,
     pitchClasses: chordPitchClasses(root, quality),
     triad: [root, (root + third) % 12, (root + 7) % 12],
-    name: chordName(root, quality),
+    name: chordName(root, quality, scale.names),
   };
 }
 
