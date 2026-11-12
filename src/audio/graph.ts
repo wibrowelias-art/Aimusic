@@ -194,7 +194,8 @@ export function createWobble(ctx: BaseAudioContext, lofi: number, startTime = 0)
     g.gain.value = cents;
     osc.connect(g);
     g.connect(out);
-    osc.start(startTime);
+    // Never negative: when seeking, piece time 0 can lie before the context started.
+    osc.start(Math.max(0, startTime));
     lfos.push(osc);
     gains.push(g);
   };
@@ -430,6 +431,12 @@ export interface GraphOptions {
   startTime?: number;
   /** Length in piece seconds including the tail; the noise fades out at its end. Default totalSecFor(piece). */
   totalSec?: number;
+  /**
+   * Piece time in seconds at which playback begins (seeking). Voices that are over by
+   * then are not built; voices that still ring start part-way into their sample. The
+   * caller sets `startTime` so that piece time `fromSec` falls on "now". Default 0.
+   */
+  fromSec?: number;
   /** Build only these stems (the others stay silent). Default: all three. */
   stems?: readonly StemName[];
   /** Pre-built impulse response for piece.params.reverbSize at the context sample rate (cache). */
@@ -485,6 +492,7 @@ export function buildGraph(
   const { params } = piece;
   const startTime = opts.startTime ?? 0;
   const totalSec = opts.totalSec ?? totalSecFor(piece);
+  const fromSec = Math.max(0, opts.fromSec ?? 0);
   const wanted = new Set<StemName>(opts.stems ?? STEM_NAMES);
   const realtime = typeof (ctx as Partial<OfflineAudioContext>).startRendering !== 'function';
 
@@ -566,14 +574,15 @@ export function buildGraph(
     source.buffer = toAudioBuffer(ctx, loop);
     source.loop = true;
     const fade = ctx.createGain();
-    const fadeSec = Math.min(NOISE_FADE_SEC, totalSec / 2);
-    fade.gain.setValueAtTime(0, startTime);
-    fade.gain.linearRampToValueAtTime(1, startTime + fadeSec);
+    const begin = startTime + fromSec;
+    const fadeSec = Math.min(NOISE_FADE_SEC, Math.max(0.01, (totalSec - fromSec) / 2));
+    fade.gain.setValueAtTime(0, begin);
+    fade.gain.linearRampToValueAtTime(1, begin + fadeSec);
     fade.gain.setValueAtTime(1, startTime + totalSec - fadeSec);
     fade.gain.linearRampToValueAtTime(0, startTime + totalSec);
     source.connect(fade);
     fade.connect(stems.noise);
-    source.start(startTime);
+    source.start(begin);
     source.stop(startTime + totalSec);
     fixed.push(fade);
     sources.push(source);
@@ -605,6 +614,13 @@ export function buildGraph(
 
   const scheduleNote = (note: Note, plan: ReleasePlan): void => {
     if (!pianoIn) return;
+    if (note.time < fromSec) {
+      // Seeking: leave out what has been damped by then or has run through its sample.
+      if (plan.releaseSec + plan.tauSec * RELEASE_STOP_TAUS <= fromSec) return;
+      const { sample, semitones } = nearestSample(samples, note.pitch);
+      const played = (fromSec - note.time) * 2 ** (semitones / 12);
+      if (sample.onsetSec + played >= sample.buffer.duration - 0.05) return;
+    }
     const dest = pianoIn;
     track((onEnded) =>
       startPianoVoice(
@@ -626,6 +642,8 @@ export function buildGraph(
 
   const schedulePad = (note: PadNote): void => {
     if (!padIn) return;
+    // Seeking: a pad note that has ended and faded is left out.
+    if (note.time + note.duration + PAD_RELEASE_SEC * PAD_STOP_RELEASES <= fromSec) return;
     const dest = padIn;
     track((onEnded) =>
       startPadVoice(

@@ -33,6 +33,8 @@ export interface PlayOptions {
    * Default: totalSecFor(piece), the full rendered length before trimming.
    */
   totalSec?: number;
+  /** Seconds. Piece time to start from (seeking). Default 0. */
+  fromSec?: number;
   /** Called once when the piece has played to its end (not when stop() is called). */
   onEnded?: () => void;
 }
@@ -122,9 +124,11 @@ export class Player {
     const out = ctx.createGain();
     out.gain.value = dbToGain(opts.gainDb ?? PLAYER_DEFAULT_GAIN_DB);
     out.connect(this.limiter);
+    const fromSec = Math.max(0, opts.fromSec ?? 0);
     const graph = buildGraph(ctx, piece, this.samples, {
-      startTime: ctx.currentTime + PLAYER_START_DELAY_SEC,
+      startTime: ctx.currentTime + PLAYER_START_DELAY_SEC - fromSec,
       totalSec: opts.totalSec,
+      fromSec,
       reverbIR: this.irCache.pcm,
       noiseLoop: this.noiseCache.pcm,
     });
