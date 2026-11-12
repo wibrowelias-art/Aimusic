@@ -43,3 +43,167 @@ Open question for Elias (cannot be measured): is the attack too hard or too dull
 Converted set (MP3, LAME q4, lead-in trimmed): 23 files, 2.5 MB. Per-note numbers are in
 `public/samples/piano/manifest.json`. Note: loudness between neighbouring samples is uneven in the
 source (RMS 1 s: F#3 -32.9, A3 -35.3, C4 -28.0 dBFS).
+
+## 1. Phase 1 baseline (engine + sound)
+
+How to reproduce: `npm run measure` (writes `reports/phase1.json` and `reports/phase1.md`, plus one WAV per
+preset to `renders/`). Renderer: node-web-audio-api, 48 kHz. Every take is the centre of its preset's ranges.
+
+Column meanings: *Silent bars* = share of bars without a piano onset. *Gain* = normalisation gain (the mix is
+set to a sample peak of -1.5 dBFS). *Piano silence* = share of 50 ms frames of the piano stem below -50 dBFS.
+*Centroid* = energy-weighted centroid of the long-term spectrum of the mix. *RT60 mid* = T30 of the impulse
+response in the 500-1000 Hz band. *Tail* = seconds from the last release until piano + pad stay below -60 dBFS.
+*Ring-out* = the same, counted from the last piano onset.
+
+| Preset | Seed | Key | Mode | BPM | Bars | Notes | Notes/bar | Silent bars | File s | Gain dB | Peak dBFS | RMS dBFS | Clipped | Piano silence | Centroid Hz | RT60 mid s | Tail s | Ring-out s | Render s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 1 | F | Major pentatonic | 56 | 22 | 46 | 2.091 | 0.318 | 100.1 | 5.91 | -1.5 | -24.13 | 0 | 0.136 | 341 | 3.69 | 2.65 | 12.25 | 13.7 |
+| warm | 2 | Bb | Major pentatonic | 56 | 22 | 46 | 2.091 | 0.318 | 99.8 | 7.9 | -1.5 | -22.54 | 0 | 0.206 | 339 | 3.69 | 2.55 | 12.05 | 13.6 |
+| warm | 3 | Eb | Major pentatonic | 56 | 22 | 46 | 2.091 | 0.318 | 99.8 | 4.83 | -1.5 | -25.38 | 0 | 0.131 | 318 | 3.69 | 2.5 | 7.55 | 13 |
+| sad | 1 | Ab | Aeolian | 47 | 21 | 29 | 1.381 | 0.429 | 112.9 | 6.44 | -1.5 | -25.7 | 0 | 0.413 | 356 | 4.61 | 2.45 | 13.85 | 16 |
+| sad | 2 | C# | Aeolian | 47 | 21 | 29 | 1.381 | 0.429 | 112.9 | 7.72 | -1.5 | -24.19 | 0 | 0.362 | 372 | 4.61 | 2.7 | 14 | 15.9 |
+| sad | 3 | F# | Aeolian | 47 | 21 | 29 | 1.381 | 0.429 | 113.3 | 8.42 | -1.5 | -23.16 | 0 | 0.298 | 353 | 4.61 | 2.8 | 8.95 | 15.4 |
+| dreamy | 1 | B | Lydian | 52 | 23 | 44 | 1.913 | 0.391 | 113.1 | 6.23 | -1.5 | -23.88 | 0 | 0.226 | 313 | 5.39 | 3.85 | 14.15 | 18.4 |
+| dreamy | 2 | E | Lydian | 52 | 23 | 44 | 1.913 | 0.391 | 112.7 | 6.28 | -1.5 | -23.57 | 0 | 0.357 | 318 | 5.39 | 3.4 | 13.65 | 18.3 |
+| dreamy | 3 | A | Lydian | 52 | 23 | 44 | 1.913 | 0.391 | 112.7 | 7.01 | -1.5 | -22.69 | 0 | 0.192 | 300 | 5.39 | 3.25 | 8.75 | 18.9 |
+| cave | 1 | D | Dorian | 44 | 20 | 18 | 0.9 | 0.6 | 114.8 | 7.17 | -1.5 | -26.5 | 0 | 0.497 | 374 | 5.77 | 2.35 | 14.55 | 18.2 |
+| cave | 2 | G | Dorian | 44 | 20 | 18 | 0.9 | 0.6 | 114.8 | 7.72 | -1.5 | -26.6 | 0 | 0.543 | 409 | 5.77 | 2.5 | 14.65 | 17.8 |
+| cave | 3 | C | Dorian | 44 | 20 | 18 | 0.9 | 0.6 | 115 | 9.27 | -1.5 | -25.35 | 0 | 0.513 | 379 | 5.77 | 2.6 | 15.05 | 18.4 |
+
+| Preset | Seed | Piano RMS dBFS | Pad RMS dBFS | Noise RMS dBFS | Reverb knob s | RT60 broadband s | Dead end s |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| warm | 1 | -24.67 | -33.54 | -46.2 | 3.7 | 3.45 | 1.53 |
+| warm | 2 | -23.18 | -31.27 | -44.21 | 3.7 | 3.45 | 1.45 |
+| warm | 3 | -26.09 | -33.87 | -47.28 | 3.7 | 3.45 | 1.44 |
+| sad | 1 | -26.21 | -35.79 | -43.32 | 4.6 | 4.31 | 1.47 |
+| sad | 2 | -24.59 | -35.54 | -42.03 | 4.6 | 4.31 | 1.47 |
+| sad | 3 | -23.63 | -33.77 | -41.35 | 4.6 | 4.31 | 1.43 |
+| dreamy | 1 | -25.62 | -28.78 | -49.48 | 5.4 | 5.05 | 1.46 |
+| dreamy | 2 | -24.89 | -29.44 | -49.43 | 5.4 | 5.05 | 1.53 |
+| dreamy | 3 | -24.19 | -28.05 | -48.7 | 5.4 | 5.05 | 1.51 |
+| cave | 1 | -26.72 | -39.95 | -45.47 | 5.8 | 5.42 | 1.55 |
+| cave | 2 | -26.95 | -39.1 | -44.89 | 5.8 | 5.42 | 1.5 |
+| cave | 3 | -25.77 | -36.79 | -43.37 | 5.8 | 5.42 | 1.47 |
+
+All 12 takes pass `validatePiece` (0 notes out of scale, 0 overlaps, 0 stuck notes, density inside tolerance)
+and `checkAgainstTargets`.
+
+### Chromium against node-web-audio-api
+
+`npm run check:browser` renders one fixed take (Warm centre, seed 1, key F, about 30 s) in headless Chromium
+and in Node and compares:
+
+| Number | Chromium 153 | node-web-audio-api 2.2 |
+| --- | --- | --- |
+| Notes | 17 | 17 |
+| File length s | 39.200 | 39.250 |
+| Normalisation gain dB | 5.28 | 5.44 |
+| Peak dBFS | -1.50 | -1.50 |
+| Mix RMS dBFS | -24.92 | -24.80 |
+| Clipped samples | 0 | 0 |
+| Centroid Hz | 351.7 | 351.3 |
+| Piano / pad / noise RMS dBFS | -25.46 / -34.47 / -46.97 | -25.35 / -34.31 / -46.81 |
+| Piano silence ratio | 0.210 | 0.204 |
+| Stems summed minus mix, max | 3e-8 | 3e-8 |
+| Same take rendered twice, max difference | 2.8e-5 (-91 dBFS) | 0 |
+| Render time for 39 s of audio | 8.9 s | 5.1 s |
+
+The two engines agree within 0.16 dB. Chromium is not bit-identical between two runs (difference at -91 dBFS);
+Node is. A 16 bit WAV exported twice from the browser can therefore differ by one LSB.
+
+### Sound constants that matter (all in `src/audio/constants.ts`)
+
+| What | Constant | Value |
+| --- | --- | --- |
+| Piano level before normalisation | `PIANO_GAIN_DB` | +12 dB |
+| Velocity to gain | `VELOCITY_GAIN_EXPONENT` | (v/127)^1.7, so velocity 80 is 10.2 dB above velocity 40 |
+| Per-voice low-pass (softer = darker) | `VOICE_LP_HZ_LO/HI`, `VOICE_LP_KEYTRACK` | at C4: v20 2013 Hz, v40 3516 Hz, v60 6143 Hz, v80 10733 Hz |
+| Damper release | `DAMPER_TAU_SEC` | 0.35 s time constant (46.8 dB down after 2 s, measured) |
+| Reverb wet level, piano / pad | `PIANO_WET_DB` / `PAD_WET_DB` | -4 dB / -2 dB re the dry signal (mid band) |
+| Reverb high damping | `REVERB_BANDS` | RT60 above 4 kHz measures 0.72 x the mid-band RT60 |
+| Lo-fi low-pass on the piano bus | `LOFI_LP_HZ_CLEAN/FULL` | 9000 Hz at lo-fi 0, 2200 Hz at lo-fi 1 |
+| Tape wobble | `WOW_A/B_*`, `FLUTTER_*` | 0.37 Hz + 0.53 Hz + 6.1 Hz; measured max 15.1 cents at lo-fi 1, 5.3 cents at 0.35, 0 at 0 |
+| Hiss | `HISS_RMS_DB_AT_FULL` | -46 dBFS RMS at lo-fi 1, -55.1 at 0.35, none at 0 (before normalisation) |
+| Rain | `RAIN_RMS_DB_AT_FULL` | -34 dBFS RMS at rain 1 (before normalisation) |
+| Pad level | `PAD_GAIN_DB` | -19 dB per voice at pad 1 |
+| Pad envelope | `PAD_ATTACK_SEC` / `PAD_RELEASE_SEC` | 2.2 s to 95 % / 3.5 s to -40 dB |
+| Normalisation | `NORMALIZE_PEAK_DB` | mix peak -1.5 dBFS, boost capped at +18 dB |
+| Per-sample level smoothing | `LEVEL_CORRECTION_MAX_DB` | at most +-4 dB; mean step between neighbouring samples 2.79 dB -> 0.80 dB |
+
+### Changes made after the first measurement
+
+**1. Dead end of the file cut (sound engine).** The render length was `durationSec + reverbSize + 2.5 s`, a safe
+upper bound. Measured on the 12 baseline takes, piano + pad were already below -60 dBFS for the last 3.3 to
+5.95 s of every file (only hiss left). Now the file is cut 1.5 s after the last 50 ms frame at or above -60 dBFS
+(`TRIM_*` constants), never earlier than 1 s after the last release, and the noise bed fades out over the last
+1.5 s of the cut file. After: dead end 1.43 to 1.55 s, files 2.0 to 4.4 s shorter (Warm seed 1: 102.1 -> 100.1 s,
+Cave seed 1: 119.1 -> 114.8 s). On the takes whose normalisation gain did not change, the mix RMS moved by at
+most 0.16 dB and the centroid by at most 8 Hz.
+
+**2. Silence no longer stacks up across section boundaries (composer).** Silent bars were spread per section,
+so the silent end of one section and the silent start of the next added up. Measured on 300 takes per preset
+(parameters drawn inside the preset ranges): the longest gap sat on a section boundary in 67 % (Sad), 50 %
+(Dreamy), 84 % (Cave) of the takes although only 2 of the gaps are boundaries. Now the two count as one gap and
+no gap is planned longer than `MAX_GAP_BARS = 4` bars unless the bars cannot be placed otherwise.
+
+| Preset | Longest stretch of silent bars, before | after | Longest time between two piano onsets, median / max before | after |
+| --- | --- | --- | --- | --- |
+| Warm | 1-4 bars | 1-4 bars (unchanged) | 12.1 / 22.7 s | 12.1 / 22.7 s |
+| Sad | 2-6 bars | 2-4 bars | 21.8 / 36.5 s | 21.2 / 29.0 s |
+| Dreamy | 2-6 bars | 2-4 bars | 17.2 / 33.5 s | 17.1 / 24.9 s |
+| Cave | 3-9 bars | 3-7 bars (4 or less in 91 % of takes) | 31.0 / 47.8 s | 26.4 / 41.4 s |
+
+The Cave leftovers are takes with so few playing bars that the opening motif (2 bars) is the only phrase of
+its section.
+
+**3. A' comes back on the chords of A (composer).** The plan was "A' repeats the degrees of A and closes on the
+tonic", but with two chords in A' the first one was re-drawn at random. Measured on the same 1200 takes: A'
+started on the tonic chord in 54 / 41 / 60 / 43 % (Warm / Sad / Dreamy / Cave) and on any chord of A in
+80 / 65 / 79 / 61 %. Now A' is cut into three chords when it has 6 bars or more (tonic, on, home), and a
+two-chord A' starts on the chord that followed the tonic in A. After: tonic start 96 / 89 / 98 / 88 %, chord of
+A 100 % in all four presets. The regression pins of seeds 2 and 3 in `tests/engine/golden.test.ts` were updated.
+
+**4. Thresholds in `src/analysis/targets.ts` (changed once, here).**
+
+- `rt60Sec`: was "3 to 6 s, within 20 % of the knob", without saying which band. The impulse response measures
+  3.69 / 4.61 / 5.39 / 5.77 s in the 500-1000 Hz band for knob values 3.7 / 4.6 / 5.4 / 5.8 (within 0.5 %), and
+  6.5 % lower broadband because the highs are damped on purpose. A knob value of exactly 3.0 reads 2.985 s and
+  failed the old absolute bound. Now: mid band within 5 % of the knob (stricter), absolute bounds 2.85 to 6.3 s,
+  and broadband T30 between 0.85 and 1.05 x the knob.
+- `tailSec` (after the last release): minimum 2 s -> 0 s. The closing note is held for 1 to 2 bars, so at the
+  release the piano is already down by 30 dB or more; with pad 0 the measured tail was 0.20 s. The maximum of
+  14 s stays (nothing may hang).
+- New `ringOutSec` (after the last piano onset): 3 to 30 s. Baseline 7.55 to 15.05 s.
+- New end-to-end check of the reverb in the rendered audio: one short note without pedal decays with T30 of
+  3.33 / 4.11 / 6.34 s for knob values 3 / 4.5 / 6 (allowed: within 20 %).
+
+### Known limits (measured, not judged)
+
+- The soft sample layer decays fast by itself: raw C4 RMS is -23.3 dBFS at 0.1-0.3 s and -46.0 dBFS at 1-1.5 s.
+- The lo-fi low-pass moves the long-term spectrum very little on this material: piano stem centroid 348 to
+  388 Hz over lo-fi 0 to 1 (the samples have little energy above 3 kHz at these velocities).
+- Offline render speed in this sandbox: about 0.13 to 0.17 s per second of audio in Node, 0.23 s in headless
+  Chromium (a 100 s take: 13 to 23 s). Realtime playback does not need a render.
+- A two-chord A' cannot start on the tonic (it would repeat the closing chord), so 2 to 12 % of takes start A'
+  on another chord of A.
+
+### Listening questions for Elias (Phase 1)
+
+Files to listen to: `renders/phase1-warm-seed1.wav`, `-sad-`, `-dreamy-`, `-cave-` (made by `npm run measure`).
+
+1. **Too busy or too empty?** Warm plays 2.1 notes per bar with about a third of the bars silent; Sad 1.4 with
+   43 % silent; Cave 0.9 with 60 % silent. The longest stretch without a new piano note is typically 12 s (Warm),
+   21 s (Sad), 26 s (Cave). Knobs: the density and Space ranges of the presets, `MAX_GAP_BARS` (4).
+
+   Answer:
+
+2. **Too bright or too dull?** The mix centroid is 300 to 410 Hz, and a note at velocity 40 is low-passed at
+   3.5 kHz (C4). Is the piano attack too soft / too hard? Knobs: `VOICE_LP_HZ_LO/HI`, `LOFI_LP_HZ_*`, the sample
+   layer (`LAYER` in `scripts/fetch-samples.mjs`, now 4 of 16).
+
+   Answer:
+
+3. **Reverb too short, too long, too loud?** RT60 is 3.7 s (Warm), 4.6 s (Sad), 5.4 s (Dreamy), 5.8 s (Cave) at
+   a wet level of -4 dB. Knobs: the reverb ranges of the presets, `PIANO_WET_DB`.
+
+   Answer:
