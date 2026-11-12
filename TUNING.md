@@ -421,8 +421,84 @@ three tones and noise bursts.
 - Compressor and wave shaper are the browser's own nodes: Chromium and node-web-audio-api differ slightly in
   their curves. The master stage is plain arithmetic and identical everywhere.
 
+### Test generations (one per family)
+
+Confirmed by Elias on 2026-11-12: 5 x 1:00, estimated $0.75 in total, model `music_v2_5`, no stems.
+Not run yet: the build environment has no API key (the key form was declined). To run them:
+`npm run style:test -- --length 60 --confirm-usd 0.75` with the key in `.env`. The measured numbers land in
+`reports/style-test.md`; copy the table here when it exists.
+
 ### Listening questions for Elias (Style Lab)
 
-The questions for the five test generations go here once they exist (one set of three per family), with
-the measured numbers next to them. Nothing in the chain gets tuned before the answers are written down.
+Three per family. Nothing in the prompts or the chain gets tuned before the answers are written down here.
 
+**A. Ambient keys + pads** (hall 55 %, high-cut 10 kHz, hiss -56 dB)
+
+1. Is there enough empty space between the notes, or does it play too much?
+
+   Answer:
+
+2. The reverb tail (hall, RT60 4.5 s): too long, about right, or too short?
+
+   Answer:
+
+3. The top end with the 10 kHz high-cut: too dull, right, or too bright?
+
+   Answer:
+
+**B. Bedroom demo** (saturation 45 %, wow / flutter 50 %, bedroom mic 70 %, small room 25 %, hiss -50 dB)
+
+1. Compare the two players. Does the lo-fi one come across as recorded at home on tape, or as a clean track
+   with effects on top? Which knob would you push first: saturation, wow / flutter or bedroom mic?
+
+   Answer:
+
+2. Hiss at -50 dBFS: too much, about right, or can you not hear it?
+
+   Answer:
+
+3. Did the music AI make one loose idea that just runs, or a fully arranged song? Which do you want?
+
+   Answer:
+
+**C. Dream-folk vocal** (hall 50 %, bedroom mic 30 %, high-cut 11 kHz; vocal blur 50 % only with stems)
+
+1. The voice: hushed and low in the mix, or too clear and up front?
+
+   Answer:
+
+2. The words the model wrote: fine, or would you rather have wordless humming or your own lyrics?
+
+   Answer:
+
+3. Reverb on the whole song: too washed out, right, or too dry?
+
+   Answer:
+
+**D. Slowcore guitar** (saturation 50 %, small room 35 %, bedroom mic 50 %, hiss -52 dB)
+
+1. Slow and dragging enough (the prompt asks for 66-78 BPM), or too tidy and too fast?
+
+   Answer:
+
+2. The guitars: too clean, right, or too distorted after the chain?
+
+   Answer:
+
+3. It is instrumental by default. Does that work, or do you want the soft-spoken voice switched on?
+
+   Answer:
+
+**E. Slowed + reverb** (86 % speed = -2.6 semitones, hall 50 % plus the slowed send, high-cut 8 kHz)
+
+1. Is 86 % speed slow enough, or should it go further (the knob goes to 75 %)?
+
+   Answer:
+
+2. With the 8 kHz high-cut and the hall: blurry in the way you want, or just muddy?
+
+   Answer:
+
+3. Did the generated track have a beat? Do you want one, a faint one, or none?
+
+   Answer:
