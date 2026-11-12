@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { END_FADE_SEC, NORMALIZE_MAX_BOOST_DB, NORMALIZE_PEAK_DB, SAMPLE_RATE } from '../../src/audio/constants';
-import { peakAbs, peakDb, rmsDb } from '../../src/audio/dsp';
+import { peakAbs, peakDb, rmsDb } from '../../src/analysis';
 import { buildGraph, tailSecFor, totalSecFor } from '../../src/audio/graph';
 import { renderPiece } from '../../src/audio/render';
 import type { PianoSampleSet } from '../../src/audio/sampler';

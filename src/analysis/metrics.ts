@@ -75,6 +75,49 @@ export function sumChannels(...parts: Channels[]): Float32Array[] {
 }
 
 // ---------------------------------------------------------------------------
+// Levels of a stretch of samples
+// ---------------------------------------------------------------------------
+
+/**
+ * Largest |sample| over all channels inside [fromSample, toSample), linear.
+ * 0 for an empty stretch, NaN when the stretch holds a NaN sample.
+ */
+export function peakAbs(channels: Channels, fromSample = 0, toSample = Infinity): number {
+  let peak = 0;
+  for (const ch of channels) {
+    const end = Math.min(toSample, ch.length);
+    for (let i = Math.max(0, Math.ceil(fromSample)); i < end; i++) {
+      const a = Math.abs(ch[i]);
+      if (a > peak) peak = a;
+      else if (Number.isNaN(a)) return NaN;
+    }
+  }
+  return peak;
+}
+
+/** Sample peak in dBFS over all channels inside [fromSample, toSample). -Infinity for silence. */
+export function peakDb(channels: Channels, fromSample = 0, toSample = Infinity): number {
+  return toDb(peakAbs(channels, fromSample, toSample));
+}
+
+/**
+ * RMS in dBFS over all channels inside [fromSample, toSample) (every channel counts with
+ * the samples it has there). -Infinity for silence or an empty stretch.
+ */
+export function rmsDb(channels: Channels, fromSample = 0, toSample = Infinity): number {
+  let sum = 0;
+  let count = 0;
+  for (const ch of channels) {
+    const end = Math.min(toSample, ch.length);
+    for (let i = Math.max(0, Math.ceil(fromSample)); i < end; i++) {
+      sum += ch[i] * ch[i];
+      count++;
+    }
+  }
+  return count > 0 ? powerToDb(sum / count) : -Infinity;
+}
+
+// ---------------------------------------------------------------------------
 // Frame levels, silence ratio, tail
 // ---------------------------------------------------------------------------
 
@@ -364,17 +407,17 @@ export function measureAudio(channels: Channels, sampleRate: number, opts: Measu
   // A NaN sample must not hide behind a normal looking peak.
   if (Number.isNaN(sumSquares)) peak = NaN;
 
-  const peakDb = toDb(peak);
-  const rmsDb = total > 0 ? powerToDb(sumSquares / total) : -Infinity;
+  const peakLevelDb = toDb(peak);
+  const rmsLevelDb = total > 0 ? powerToDb(sumSquares / total) : -Infinity;
   const musicEnd = opts.musicEndSec;
 
   return {
     sampleRate,
     durationSec: n / sampleRate,
-    peakDb,
+    peakDb: peakLevelDb,
     clippedSamples: clipped,
-    rmsDb,
-    crestDb: peak === 0 ? 0 : peakDb - rmsDb,
+    rmsDb: rmsLevelDb,
+    crestDb: peak === 0 ? 0 : peakLevelDb - rmsLevelDb,
     dcOffset: total > 0 ? sum / total : 0,
     silenceRatio: silenceRatio(channels, sampleRate, silenceThresholdDb, frameMs),
     silenceThresholdDb,

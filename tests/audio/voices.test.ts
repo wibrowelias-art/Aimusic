@@ -11,9 +11,10 @@ import {
   VOICE_LP_HZ_MAX,
   VOICE_LP_HZ_MIN,
 } from '../../src/audio/constants';
-import { biquadInPlace, dbToGain, highpassCoeffs, midiToHz, peakAbs, rmsDb } from '../../src/audio/dsp';
+import { biquadInPlace, dbToGain, highpassCoeffs, midiToHz } from '../../src/audio/dsp';
 import { lofiCutoffHz, startPadVoice, startPianoVoice, velocityGain, voiceCutoffHz } from '../../src/audio/graph';
 import { nearestSample } from '../../src/audio/sampler';
+import { measurePitchDeviationCents, peakAbs, rmsDb } from '../../src/analysis';
 import { createContext, loadSamples, makeNoiseSampleSet, makeSineSampleSet } from '../fixtures/audio';
 
 const SR = SAMPLE_RATE;
@@ -84,15 +85,14 @@ describe('piano voice (rendered, synthetic samples)', () => {
       const ctx = createContext(1, at(2), SR);
       startPianoVoice(ctx, set, { pitch, velocity: 100, startAt: 0, releaseAt: Infinity }, ctx.destination);
       const x = (await ctx.startRendering()).getChannelData(0);
-      const crossings: number[] = [];
-      for (let i = at(0.1) + 1; i < at(1.9); i++) {
-        if (x[i - 1] < 0 && x[i] >= 0) crossings.push(i - 1 + -x[i - 1] / (x[i] - x[i - 1]));
-      }
-      const hz = ((crossings.length - 1) * SR) / (crossings[crossings.length - 1] - crossings[0]);
       // Shift is clamped to +-12 semitones for pitches outside the sampled range.
       const expected = midiToHz(Math.max(pitch, 60 - MAX_SHIFT_SEMITONES));
+      const measured = measurePitchDeviationCents(x, SR, expected);
+      const hz = expected * 2 ** (measured.meanCents / 1200);
       report.push(`${pitch}: ${hz.toFixed(2)} Hz (expected ${expected.toFixed(2)})`);
-      expect(Math.abs(1200 * Math.log2(hz / expected))).toBeLessThan(0.5);
+      expect(measured.analyzedSec).toBeGreaterThan(1.5);
+      expect(Math.abs(measured.meanCents)).toBeLessThan(0.5);
+      expect(measured.maxCents).toBeLessThan(0.5);
     }
     console.log(`pitch from one C4 sine sample: ${report.join(', ')}`);
   });

@@ -1,25 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { REVERB_PREDELAY_SEC, REVERB_REF_BAND_HZ, SAMPLE_RATE } from '../../src/audio/constants';
-import { biquadInPlace, highpassCoeffs, lowpassCoeffs } from '../../src/audio/dsp';
-import { bandEnergyGain, buildReverbIR, measureRt60, reverbIRLength } from '../../src/audio/reverb';
-import { AUDIO_TARGETS } from '../../src/analysis/targets';
+import { bandEnergyGain, buildReverbIR, reverbIRLength } from '../../src/audio/reverb';
+import { AUDIO_TARGETS, measureRt60 } from '../../src/analysis';
 
 const SR = SAMPLE_RATE;
 const SIZES = [3, 4.5, 6];
 const irs = new Map(SIZES.map((rt) => [rt, buildReverbIR(SR, rt)]));
-
-function band(ir: readonly Float32Array[], loHz: number, hiHz: number): Float32Array[] {
-  return ir.map((ch) => {
-    const copy = Float32Array.from(ch);
-    biquadInPlace(copy, highpassCoeffs(SR, loHz));
-    biquadInPlace(copy, highpassCoeffs(SR, loHz));
-    if (hiHz < SR / 2) {
-      biquadInPlace(copy, lowpassCoeffs(SR, hiHz));
-      biquadInPlace(copy, lowpassCoeffs(SR, hiHz));
-    }
-    return copy;
-  });
-}
 
 const energy = (ch: Float32Array): number => ch.reduce((s, v) => s + v * v, 0);
 
@@ -36,13 +22,13 @@ describe('buildReverbIR', () => {
   it.each(SIZES)('measured RT60 matches the request of %s s', (rt) => {
     const ir = irs.get(rt)!;
     const broad = measureRt60(ir, SR);
-    const mid = measureRt60(band(ir, 500, 1000), SR);
-    const high = measureRt60(band(ir, 4000, SR), SR);
+    const mid = measureRt60(ir, SR, { bandHz: REVERB_REF_BAND_HZ });
+    const high = measureRt60(ir, SR, { bandHz: [4000, SR / 2] });
     console.log(
-      `RT60 request ${rt} s: broadband T30 ${broad.toFixed(2)} s, 500-1000 Hz ${mid.toFixed(2)} s, above 4 kHz ${high.toFixed(2)} s`,
+      `RT60 request ${rt} s: broadband T30 ${broad.toFixed(2)} s, ${REVERB_REF_BAND_HZ[0]}-${REVERB_REF_BAND_HZ[1]} Hz ${mid.toFixed(2)} s, above 4 kHz ${high.toFixed(2)} s`,
     );
     expect(Math.abs(broad - rt) / rt).toBeLessThan(AUDIO_TARGETS.rt60Tolerance);
-    expect(Math.abs(mid - rt) / rt).toBeLessThan(0.1);
+    expect(Math.abs(mid - rt) / rt).toBeLessThan(0.03);
     // Damping: highs decay faster than mids.
     expect(high).toBeLessThan(mid * 0.85);
     expect(high).toBeGreaterThan(mid * 0.4);
@@ -113,18 +99,5 @@ describe('buildReverbIR', () => {
       const corr = dot / Math.sqrt(energy(l) * energy(r));
       expect(Math.abs(corr)).toBeLessThan(0.1);
     }
-  });
-
-  it('measureRt60 reads a known synthetic decay', () => {
-    // White noise with an exact 2 s RT60 envelope.
-    const n = SR * 3;
-    const x = new Float32Array(n);
-    let seed = 12345;
-    for (let i = 0; i < n; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      x[i] = (seed / 2147483648 - 1) * Math.exp((-Math.log(1000) * i) / (2 * SR));
-    }
-    expect(measureRt60([x], SR)).toBeGreaterThan(1.95);
-    expect(measureRt60([x], SR)).toBeLessThan(2.05);
   });
 });

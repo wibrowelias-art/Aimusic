@@ -1,6 +1,7 @@
 /**
- * Pure DSP helpers (no AudioContext): dB conversion, RBJ biquads, level meters.
- * Used to build the reverb impulse response and the noise loop, and by the tests.
+ * Pure DSP helpers (no AudioContext): dB conversion and RBJ biquads.
+ * Used to build the reverb impulse response and the noise loop. Level meters and
+ * every other measurement live in src/analysis.
  */
 
 export function dbToGain(db: number): number {
@@ -101,39 +102,4 @@ export function biquadPeriodicInPlace(
   const head = x.slice(n - w);
   biquadInPlace(head, c, state);
   biquadInPlace(x, c, state);
-}
-
-/** Largest |sample| over all channels in [from, to). */
-export function peakAbs(channels: readonly Float32Array[], from = 0, to = Infinity): number {
-  let peak = 0;
-  for (const ch of channels) {
-    const end = Math.min(to, ch.length);
-    for (let i = Math.max(0, from); i < end; i++) {
-      const a = Math.abs(ch[i]);
-      if (a > peak) peak = a;
-    }
-  }
-  return peak;
-}
-
-/** RMS over all channels in [from, to), linear. */
-export function rms(channels: readonly Float32Array[], from = 0, to = Infinity): number {
-  let sum = 0;
-  let count = 0;
-  for (const ch of channels) {
-    const end = Math.min(to, ch.length);
-    for (let i = Math.max(0, from); i < end; i++) {
-      sum += ch[i] * ch[i];
-      count++;
-    }
-  }
-  return count > 0 ? Math.sqrt(sum / count) : 0;
-}
-
-export function peakDb(channels: readonly Float32Array[], from = 0, to = Infinity): number {
-  return gainToDb(peakAbs(channels, from, to));
-}
-
-export function rmsDb(channels: readonly Float32Array[], from = 0, to = Infinity): number {
-  return gainToDb(rms(channels, from, to));
 }

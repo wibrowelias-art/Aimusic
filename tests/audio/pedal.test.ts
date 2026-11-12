@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DAMPER_FREE_FROM_MIDI, DAMPER_TAU_SEC, RETRIGGER_TAU_SEC, SAMPLE_RATE } from '../../src/audio/constants';
-import { rmsDb } from '../../src/audio/dsp';
 import { planReleases, startPianoVoice } from '../../src/audio/graph';
+import { rmsDb } from '../../src/analysis';
 import type { PedalEvent } from '../../src/engine/types';
 import { createContext, loadSamples } from '../fixtures/audio';
 

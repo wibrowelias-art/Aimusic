@@ -7,6 +7,9 @@ import {
   longTermSpectrum,
   measureAudio,
   measurePitchDeviationCents,
+  peakAbs,
+  peakDb,
+  rmsDb,
   silenceRatio,
   spectralCentroid,
   tailSecAfter,
@@ -73,6 +76,13 @@ describe('any input: no exception, no NaN', () => {
       expect(m.clippedSamples >= 0, label).toBe(true);
       expect(typeof formatMetricsRow(label, m), label).toBe('string');
       expect(Array.isArray(checkAgainstTargets(m, { pianoSilenceRatio: m.silenceRatio }).failures), label).toBe(true);
+
+      const from = rng.uniform(-100, first.length + 100);
+      const to = from + rng.uniform(-50, 5000);
+      expect(peakAbs(channels, from, to) >= 0 && peakAbs(channels) >= peakAbs(channels, from, to), label).toBe(true);
+      expect(Number.isNaN(peakDb(channels, from, to)) || Number.isNaN(rmsDb(channels, from, to)), label).toBe(false);
+      expect(peakDb(channels, from, to) + 1e-9 >= rmsDb(channels, from, to), label).toBe(true);
+      expect(peakDb(channels), label).toBe(m.peakDb);
 
       expect(frameRmsDb(channels, sampleRate, 50).some((v) => Number.isNaN(v)), label).toBe(false);
       expect(silenceRatio(channels, sampleRate, -30), label).toBeGreaterThanOrEqual(m.silenceRatio === 1 ? 1 : 0);

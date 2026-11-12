@@ -1,8 +1,8 @@
 /** Public API of the sound engine. */
 export * from './types';
 export * from './constants';
-export { dbToGain, gainToDb, midiToHz, peakAbs, peakDb, rms, rmsDb } from './dsp';
-export { buildReverbIR, measureRt60, reverbIRLength } from './reverb';
+export { dbToGain, gainToDb, midiToHz } from './dsp';
+export { bandEnergyGain, buildReverbIR, reverbIRLength } from './reverb';
 export { buildNoiseLoop, hissRmsDb, rainRmsDb, type NoiseLoopOptions } from './noise';
 export { encodeWav, WAV_HEADER_BYTES, type WavOptions } from './wav';
 export {

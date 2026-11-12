@@ -4,7 +4,10 @@ import {
   frameRmsDb,
   fromDb,
   measureAudio,
+  peakAbs,
+  peakDb,
   powerToDb,
+  rmsDb,
   silenceRatio,
   sumChannels,
   tailSecAfter,
@@ -41,6 +44,58 @@ describe('dB helpers', () => {
     expect(powerToDb(0.01)).toBeCloseTo(-20, 12);
     expect(powerToDb(0)).toBe(-Infinity);
     for (const db of [-60, -12.3, 0, 6]) expect(toDb(fromDb(db))).toBeCloseTo(db, 10);
+  });
+});
+
+describe('peakAbs, peakDb, rmsDb: levels of a stretch of samples', () => {
+  it('agree with measureAudio over the whole signal', () => {
+    const stereo = [whiteNoise({ seconds: 0.5, rmsDb: -20, seed: 31 }), sine({ hz: 300, seconds: 0.5, amplitude: 0.25 })];
+    const m = measureAudio(stereo, SR);
+    expect(peakDb(stereo)).toBe(m.peakDb);
+    expect(rmsDb(stereo)).toBeCloseTo(m.rmsDb, 9);
+    expect(toDb(peakAbs(stereo))).toBe(m.peakDb);
+  });
+
+  it('read only the samples inside [fromSample, toSample)', () => {
+    const x = new Float32Array(1000);
+    x.fill(0.5, 100, 200);
+    x[150] = -0.8;
+    x[600] = 0.1;
+    expect(peakAbs([x])).toBeCloseTo(0.8, 6);
+    expect(peakAbs([x], 151)).toBeCloseTo(0.5, 6);
+    expect(peakAbs([x], 200)).toBeCloseTo(0.1, 6);
+    expect(peakAbs([x], 200, 600)).toBe(0);
+    expect(peakAbs([x], 600, 601)).toBeCloseTo(0.1, 6);
+    expect(peakDb([x], 200, 600)).toBe(-Infinity);
+    expect(rmsDb([x], 200, 600)).toBe(-Infinity);
+    // 100 samples at 0.5 except one at 0.8, inside a window of 200 samples.
+    const meanSquare = (99 * 0.25 + 0.64) / 200;
+    expect(rmsDb([x], 50, 250)).toBeCloseTo(10 * Math.log10(meanSquare), 5);
+    // Bounds outside the signal and fractional bounds are fine; an empty stretch is silence.
+    expect(rmsDb([x], -50, 5000)).toBeCloseTo(rmsDb([x]), 12);
+    expect(peakAbs([x], 149.2, 150.5)).toBeCloseTo(0.8, 6);
+    expect(peakAbs([x], 300, 200)).toBe(0);
+    expect(rmsDb([x], 300, 200)).toBe(-Infinity);
+    expect(rmsDb([], 0, 10)).toBe(-Infinity);
+    expect(peakAbs([])).toBe(0);
+  });
+
+  it('pool the channels and count a shorter channel only where it has samples', () => {
+    const long = new Float32Array(200).fill(0.5);
+    const short = new Float32Array(100).fill(0.5);
+    expect(rmsDb([long, short])).toBeCloseTo(toDb(0.5), 6);
+    expect(rmsDb([long, new Float32Array(200)])).toBeCloseTo(toDb(0.5) - 10 * Math.log10(2), 6);
+    expect(peakDb([new Float32Array(10), short])).toBeCloseTo(toDb(0.5), 6);
+  });
+
+  it('do not hide a NaN sample', () => {
+    const x = new Float32Array(100).fill(0.1);
+    x[40] = NaN;
+    expect(peakAbs([x])).toBeNaN();
+    expect(peakDb([x])).toBeNaN();
+    expect(rmsDb([x])).toBeNaN();
+    expect(peakAbs([x], 41)).toBeCloseTo(0.1, 6);
+    expect(rmsDb([x], 0, 40)).toBeCloseTo(-20, 5);
   });
 });
 

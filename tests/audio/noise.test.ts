@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HISS_RMS_DB_AT_FULL, NOISE_LOOP_SEC, RAIN_RMS_DB_AT_FULL, SAMPLE_RATE } from '../../src/audio/constants';
-import { peakDb, rmsDb } from '../../src/audio/dsp';
 import { buildNoiseLoop, hissRmsDb, rainRmsDb } from '../../src/audio/noise';
+import { peakDb, rmsDb } from '../../src/analysis';
 
 const SR = SAMPLE_RATE;
 
