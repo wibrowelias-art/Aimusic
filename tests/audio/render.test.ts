@@ -1,6 +1,15 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { END_FADE_SEC, NORMALIZE_MAX_BOOST_DB, NORMALIZE_PEAK_DB, SAMPLE_RATE } from '../../src/audio/constants';
-import { peakAbs, peakDb, rmsDb } from '../../src/analysis';
+import {
+  END_FADE_SEC,
+  NORMALIZE_MAX_BOOST_DB,
+  NORMALIZE_PEAK_DB,
+  SAMPLE_RATE,
+  TRIM_FRAME_SEC,
+  TRIM_KEEP_SEC,
+  TRIM_MIN_AFTER_END_SEC,
+  TRIM_THRESHOLD_DB,
+} from '../../src/audio/constants';
+import { peakAbs, peakDb, rmsDb, sumChannels } from '../../src/analysis';
 import { buildGraph, tailSecFor, totalSecFor } from '../../src/audio/graph';
 import { renderPiece } from '../../src/audio/render';
 import type { PianoSampleSet } from '../../src/audio/sampler';
@@ -87,8 +96,34 @@ describe('renderPiece', () => {
 
   it('has the documented length and metadata', () => {
     expect(full.sampleRate).toBe(48000);
-    expect(full.length).toBe(Math.ceil(totalSecFor(piece) * SR));
     expect(full.musicEndSec).toBe(piece.durationSec);
+    // The dead end is cut: never longer than what was rendered, never shorter than
+    // TRIM_MIN_AFTER_END_SEC after the last release, and exactly TRIM_KEEP_SEC after
+    // the last 50 ms frame in which piano + pad are at or above TRIM_THRESHOLD_DB.
+    const lines: string[] = [];
+    for (const [result, source] of [
+      [full, piece],
+      [bare, barePiece],
+    ] as const) {
+      const rendered = Math.ceil(totalSecFor(source) * SR);
+      const minFrames = Math.ceil((source.durationSec + TRIM_MIN_AFTER_END_SEC) * SR);
+      expect(result.length).toBeLessThanOrEqual(rendered);
+      expect(result.length).toBeGreaterThanOrEqual(minFrames);
+      const music = sumChannels(result.stems.piano, result.stems.pad);
+      const frame = Math.round(TRIM_FRAME_SEC * SR);
+      // The final END_FADE_SEC are faded, so look for the last loud frame before them.
+      const fadeStart = result.length - Math.round(END_FADE_SEC * SR);
+      let lastLoud = 0;
+      for (let start = 0; start + frame <= fadeStart; start += frame) {
+        if (rmsDb(music, start, start + frame) >= TRIM_THRESHOLD_DB) lastLoud = start + frame;
+      }
+      const expected = Math.max(minFrames, lastLoud + Math.round(TRIM_KEEP_SEC * SR));
+      lines.push(
+        `rendered ${(rendered / SR).toFixed(2)} s, kept ${(result.length / SR).toFixed(2)} s (music end ${source.durationSec.toFixed(2)} s, last frame at or above ${TRIM_THRESHOLD_DB} dBFS ends at ${(lastLoud / SR).toFixed(2)} s)`,
+      );
+      if (result.length < rendered) expect(Math.abs(result.length - expected)).toBeLessThanOrEqual(frame);
+    }
+    console.log(lines.join('\n'));
     for (const ch of [...full.mix, ...STEM_NAMES.flatMap((n) => full.stems[n])]) {
       expect(ch).toBeInstanceOf(Float32Array);
       expect(ch.length).toBe(full.length);

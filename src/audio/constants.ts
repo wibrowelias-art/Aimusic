@@ -258,6 +258,18 @@ export const NORMALIZE_STEM_CEILING_DB = -1.0;
 export const NORMALIZE_MAX_BOOST_DB = 18;
 /** Seconds. Fade to digital silence at the very end of the render. */
 export const END_FADE_SEC = 0.5;
+/**
+ * Trimming the dead end. The rendered length (above) is a safe upper bound; the music is
+ * usually over earlier. The file is cut TRIM_KEEP_SEC after the last 50 ms frame in which
+ * piano + pad are still at or above TRIM_THRESHOLD_DB (dBFS RMS, after normalisation), but
+ * never earlier than TRIM_MIN_AFTER_END_SEC after piece.durationSec. The noise stem fades
+ * out over the last NOISE_FADE_SEC of the cut file.
+ */
+export const TRIM_THRESHOLD_DB = -60;
+export const TRIM_KEEP_SEC = 1.5;
+export const TRIM_MIN_AFTER_END_SEC = 1.0;
+/** Seconds. Frame length used when looking for the end of the music. */
+export const TRIM_FRAME_SEC = 0.05;
 
 // ---------------------------------------------------------------------------
 // WAV export

@@ -10,10 +10,15 @@
 import type { Piece } from '../engine/types';
 import {
   END_FADE_SEC,
+  NOISE_FADE_SEC,
   NORMALIZE_MAX_BOOST_DB,
   NORMALIZE_PEAK_DB,
   NORMALIZE_STEM_CEILING_DB,
   SAMPLE_RATE,
+  TRIM_FRAME_SEC,
+  TRIM_KEEP_SEC,
+  TRIM_MIN_AFTER_END_SEC,
+  TRIM_THRESHOLD_DB,
 } from './constants';
 import { dbToGain, gainToDb } from './dsp';
 import { buildGraph, totalSecFor } from './graph';
@@ -107,15 +112,52 @@ async function renderSeparately(
   return stems;
 }
 
+/**
+ * Number of frames to keep: TRIM_KEEP_SEC after the last frame in which piano + pad
+ * (after `gain`) are at or above TRIM_THRESHOLD_DB, at least TRIM_MIN_AFTER_END_SEC
+ * after the last release, at most everything that was rendered.
+ */
+function trimmedFrames(
+  stems: Stems,
+  rendered: number,
+  gain: number,
+  durationSec: number,
+  sampleRate: number,
+): number {
+  const frame = Math.max(1, Math.round(TRIM_FRAME_SEC * sampleRate));
+  const threshold = dbToGain(TRIM_THRESHOLD_DB) / (gain > 0 ? gain : 1);
+  const minPower = threshold * threshold;
+  let lastLoud = 0;
+  for (let start = Math.floor((rendered - 1) / frame) * frame; start >= 0; start -= frame) {
+    const end = Math.min(rendered, start + frame);
+    let sum = 0;
+    for (let c = 0; c < 2; c++) {
+      const a = stems.piano[c];
+      const b = stems.pad[c];
+      for (let i = start; i < end; i++) {
+        const v = a[i] + b[i];
+        sum += v * v;
+      }
+    }
+    if (sum / (2 * (end - start)) >= minPower) {
+      lastLoud = end;
+      break;
+    }
+  }
+  const afterMusic = lastLoud + Math.round(TRIM_KEEP_SEC * sampleRate);
+  const afterEnd = Math.ceil((durationSec + TRIM_MIN_AFTER_END_SEC) * sampleRate);
+  return Math.min(rendered, Math.max(afterMusic, afterEnd));
+}
+
 export async function renderPiece(piece: Piece, deps: RenderDeps): Promise<RenderResult> {
   const sampleRate = deps.sampleRate ?? SAMPLE_RATE;
   const totalSec = totalSecFor(piece);
-  const frames = Math.ceil(totalSec * sampleRate);
+  const rendered = Math.ceil(totalSec * sampleRate);
   const channelsWanted = 2 * STEM_NAMES.length;
 
   let merged: OfflineAudioContext | null = null;
   try {
-    merged = deps.createContext(channelsWanted, frames, sampleRate);
+    merged = deps.createContext(channelsWanted, rendered, sampleRate);
     if (merged.destination.maxChannelCount < channelsWanted) merged = null;
   } catch {
     merged = null;
@@ -124,20 +166,9 @@ export async function renderPiece(piece: Piece, deps: RenderDeps): Promise<Rende
   let stems: Stems | null = null;
   if (merged) {
     samples ??= await loadPianoSamples(merged, deps.fetchSample, deps.manifest);
-    stems = await renderMerged(merged, piece, samples, totalSec, frames);
+    stems = await renderMerged(merged, piece, samples, totalSec, rendered);
   }
-  stems ??= await renderSeparately(deps, piece, samples, totalSec, frames, sampleRate);
-
-  // Common fade to digital silence over the last END_FADE_SEC.
-  const fade = Math.min(frames, Math.round(END_FADE_SEC * sampleRate));
-  for (const name of STEM_NAMES) {
-    for (const ch of stems[name]) {
-      for (let i = 0; i < fade; i++) {
-        ch[frames - fade + i] *= 0.5 + 0.5 * Math.cos((Math.PI * (i + 1)) / fade);
-      }
-      if (frames > 0) ch[frames - 1] = 0;
-    }
-  }
+  stems ??= await renderSeparately(deps, piece, samples, totalSec, rendered, sampleRate);
 
   // One common gain: the MIX peaks at NORMALIZE_PEAK_DB, boost capped. A single
   // stem can in theory peak above the mix (when another stem cancels it there),
@@ -148,7 +179,7 @@ export async function renderPiece(piece: Piece, deps: RenderDeps): Promise<Rende
     const a = stems.piano[c];
     const b = stems.pad[c];
     const n = stems.noise[c];
-    for (let i = 0; i < frames; i++) {
+    for (let i = 0; i < rendered; i++) {
       const v = Math.abs(a[i] + b[i] + n[i]);
       if (v > peak) peak = v;
       const s = Math.max(Math.abs(a[i]), Math.abs(b[i]), Math.abs(n[i]));
@@ -163,6 +194,30 @@ export async function renderPiece(piece: Piece, deps: RenderDeps): Promise<Rende
       dbToGain(NORMALIZE_MAX_BOOST_DB),
     );
   }
+
+  // Cut the dead end (see TRIM_* in constants.ts) and let the noise bed fade out with it.
+  const frames = trimmedFrames(stems, rendered, gain, piece.durationSec, sampleRate);
+  if (frames < rendered) {
+    for (const name of STEM_NAMES) {
+      stems[name] = [stems[name][0].slice(0, frames), stems[name][1].slice(0, frames)];
+    }
+    const noiseFade = Math.min(frames, Math.round(NOISE_FADE_SEC * sampleRate));
+    for (const ch of stems.noise) {
+      for (let i = 0; i < noiseFade; i++) ch[frames - noiseFade + i] *= 1 - (i + 1) / noiseFade;
+    }
+  }
+
+  // Common fade to digital silence over the last END_FADE_SEC.
+  const fade = Math.min(frames, Math.round(END_FADE_SEC * sampleRate));
+  for (const name of STEM_NAMES) {
+    for (const ch of stems[name]) {
+      for (let i = 0; i < fade; i++) {
+        ch[frames - fade + i] *= 0.5 + 0.5 * Math.cos((Math.PI * (i + 1)) / fade);
+      }
+      if (frames > 0) ch[frames - 1] = 0;
+    }
+  }
+
   const mix: StereoPcm = [new Float32Array(frames), new Float32Array(frames)];
   for (let c = 0; c < 2; c++) {
     const a = stems.piano[c];

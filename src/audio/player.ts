@@ -27,6 +27,12 @@ import { STEM_NAMES, type StereoPcm } from './types';
 export interface PlayOptions {
   /** dB. Master gain. Pass RenderResult.gainDb to play at the level of the export. */
   gainDb?: number;
+  /**
+   * Seconds. Length to play, tail included; the noise bed fades out at its end.
+   * Pass RenderResult.length / sampleRate to end where the export ends.
+   * Default: totalSecFor(piece), the full rendered length before trimming.
+   */
+  totalSec?: number;
   /** Called once when the piece has played to its end (not when stop() is called). */
   onEnded?: () => void;
 }
@@ -118,6 +124,7 @@ export class Player {
     out.connect(this.limiter);
     const graph = buildGraph(ctx, piece, this.samples, {
       startTime: ctx.currentTime + PLAYER_START_DELAY_SEC,
+      totalSec: opts.totalSec,
       reverbIR: this.irCache.pcm,
       noiseLoop: this.noiseCache.pcm,
     });
