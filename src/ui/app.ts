@@ -45,6 +45,7 @@ import { MODES, type Mode, type NumericParamKey, type Params, type Piece } from 
 import { learnedShifts, sampleParams, type Learned } from '../store/learning';
 import { browserStore, readJson, writeJson, type KeyValueStore } from '../store/storage';
 import { TakeStore, type Take, type TakeOrigin } from '../store/takes';
+import { ChatBox } from './chat';
 import { clear, downloadBytes, formatTime, h, icon } from './dom';
 import { Knob } from './knob';
 import { PianoRoll, Waveform } from './views';
@@ -167,6 +168,7 @@ export class App {
     this.roll.onSeek = (sec) => this.seek(sec);
     this.wave.onSeek = (sec) => this.seek(sec);
     document.addEventListener('keydown', (e) => this.onKey(e));
+    this.els.extras.append(new ChatBox(this).element);
 
     this.refreshMoods();
     this.refreshKnobs();
@@ -512,6 +514,15 @@ export class App {
 
   getPreset(): PresetName {
     return this.prefs.preset;
+  }
+
+  hasTake(): boolean {
+    return this.current !== null;
+  }
+
+  /** A new take (Generate) or a variation of the current one (Again). */
+  runAction(action: 'generate' | 'again'): void {
+    void (action === 'generate' ? this.generateNew() : this.again());
   }
 
   getLearned(): Learned {

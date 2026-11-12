@@ -180,6 +180,40 @@ try {
   data = await stored();
   check(data.takes[0].params.tempo === data.takes[1].params.tempo, 'a fixed knob keeps its value on the next Generate');
 
+  // Chat: words move the knobs, and what changed is shown
+  const beforeChat = data.takes[0].params;
+  await page.fill('.chat-input', 'sadder, slower, more space, add rain');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  data = await stored();
+  const afterChat = data.takes[0].params;
+  check(data.takes.length === 4, 'a chat message changes the current take, it does not add one');
+  check(afterChat.seed === beforeChat.seed, 'chat keeps the seed');
+  check(afterChat.tempo === Math.max(40, beforeChat.tempo - 10), `chat "slower" + "sadder" lowers the tempo (${beforeChat.tempo} -> ${afterChat.tempo})`);
+  check(afterChat.rain >= 0.25 && afterChat.rain > beforeChat.rain, `chat "add rain" turns the rain on (${beforeChat.rain} -> ${afterChat.rain})`);
+  check(afterChat.restProbability > beforeChat.restProbability, 'chat "more space" raises the share of silent bars');
+  const shown = ((await text('.chat-changes')) ?? '').replace(/\s+/g, ' ');
+  check(shown.includes('Tempo') && shown.includes('Rain') && shown.includes('Space'), `chat shows what changed: ${shown.slice(0, 140)}`);
+  check(await page.evaluate(() => document.querySelector('[role="slider"][aria-label="Rain"]')?.closest('.knob')?.classList.contains('is-pinned')), 'knobs moved by chat are fixed');
+  await page.screenshot({ path: 'reports/tmp/ui-6-chat.png' });
+
+  await page.fill('.chat-input', 'make it sound like Sweden by C418, and a bit brighter');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  data = await stored();
+  const refusedText = ((await text('.chat-refused')) ?? '').replace(/\s+/g, ' ');
+  check(refusedText.includes('do not copy or imitate existing music') && refusedText.includes('Sweden by C418'), `a reference to existing music is left out and the UI says so: ${refusedText.slice(0, 120)}`);
+  check(data.takes[0].params.register === Math.min(79, afterChat.register + 2) && data.takes[0].params.tempo === afterChat.tempo, 'the rest of that message ("a bit brighter") still applies');
+  await page.screenshot({ path: 'reports/tmp/ui-7-chat-refused.png' });
+  await page.click('.chips .chip >> nth=4');
+  await page.waitForTimeout(400);
+  data = await stored();
+  check(data.takes[0].params.reverbSize > afterChat.reverbSize || afterChat.reverbSize === 6, 'an example chip ("more reverb") applies');
+  await page.locator('.topbar').click({ position: { x: 300, y: 10 } });
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(200);
+  if ((await page.getAttribute('.hero-side .btn.icon-only', 'aria-pressed')) === 'true') await page.keyboard.press('Space');
+
   // Mood change lets go of the pins
   await page.click('.mood >> nth=3');
   await page.keyboard.press('g');
