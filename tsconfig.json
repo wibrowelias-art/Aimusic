@@ -3,8 +3,15 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "noUnusedLocals": true,
@@ -15,5 +22,12 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "scripts", "vite.config.ts", "vitest.measure.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "dev",
+    "scripts",
+    "vite.config.ts",
+    "vitest.measure.config.ts"
+  ]
 }
