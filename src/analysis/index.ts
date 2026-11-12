@@ -17,3 +17,4 @@ export * from './targets';
 export * from './fft';
 export * from './metrics';
 export * from './reference';
+export * from './loudness';
