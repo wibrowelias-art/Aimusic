@@ -1,0 +1,8 @@
+node_modules
+dist
+*.local
+.DS_Store
+renders/
+reports/tmp/
+.vite
+coverage
