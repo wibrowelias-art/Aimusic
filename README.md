@@ -25,6 +25,21 @@ The two `check:*` scripts need Playwright with Chromium.
 - Thumbs up / down teach the mood: its ranges move towards what you like.
 - The star keeps a take (seed + settings). MIDI, WAV and stems (piano, pad, noise) are one click each.
 - Shortcuts: Space = play / stop, G = Generate, A = Again. Click the piano roll to jump.
+- **Tell the lab**: type "sadder, slower, more space, add rain". Rules, no API key. It lists every knob it
+  moved. Requests for existing music ("like <song>", "in the style of ...", note or chord lists) are left out,
+  and the box says so.
+- **Reference (optional)**: drop in a track you own. Five general traits are read (tempo, key, note density,
+  brightness, reverb length) and offered as knob values. No melody, chords or notes are read or kept; the file
+  stays in the browser.
+
+## Layout
+
+- `src/engine` – seeded composer (motif, harmony, form, performance), MIDI export, piece validation
+- `src/audio` – sampler, procedural reverb / noise / pad, offline render, WAV, realtime player
+- `src/analysis` – measurements on rendered audio, targets, reference traits
+- `src/chat` – the keyword rules behind the text box
+- `src/store` – takes, favorites, ratings and what the moods learned (localStorage)
+- `src/ui` – the interface (plain TypeScript and DOM)
 
 ## Docs
 

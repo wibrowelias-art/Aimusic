@@ -303,3 +303,57 @@ of 7). Labels only: no note changed, the regression pins are untouched.
    piano at 35 %? Is 75 % still usable? Knob: `RAIN_RMS_DB_AT_FULL` (-34 dBFS at rain 100 %).
 
    Answer:
+
+## 4. Phase 4 (reference analysis, optional)
+
+No change to the composer or to the sound constants. `src/analysis/reference.ts` reads five general traits from a
+dropped track and offers knob values. What it can hold is limited by construction: one 12-bin pitch-class
+histogram summed over the whole file (for the key), one onset-strength curve without pitch (for tempo and note
+density), the long-term spectrum (brightness) and the level curve (decay). The result type is nine scalars; a test
+checks that there is no array in it and that two different melodies made of the same notes give the same result.
+The UI check confirms that nothing about the file reaches `localStorage` and that the seed does not change.
+
+Measured accuracy on synthetic signals with known properties (`tests/analysis/reference.test.ts`):
+
+| Trait | Made | Read |
+| --- | --- | --- |
+| Tempo | pulses at 50 / 60 / 72 / 90 / 120 BPM | 50.0 / 60.0 / 72.0 / 90.0 / 60.0 BPM (120 is read an octave down, both fold to the same knob value) |
+| Note density | 0.80 / 0.95 / 1.15 / 1.43 / 1.90 onsets per second | 0.80 / 0.95 / 1.15 / 1.43 / 1.90 |
+| Key | 7 keys in 4 modes | tonic and mode right in 7 of 7 |
+| Reverb length | tails of 1.5 / 3 / 4.5 / 6 s | 1.50 / 2.99 / 4.49 / 5.99 s |
+
+Measured on the lab's own renders (six 60 s takes with known settings, a harder case: sparse, rubato, pad and
+hiss on top):
+
+| Trait | Result |
+| --- | --- |
+| Tempo | within 1 BPM in 6 of 6 (55.1 for 56, 46.7 for 47, 51.7 for 52, 44.1 for 44, 66.0 for 66, 44.7 for 44) |
+| Note density | 0.37 / 0.24 / 0.27 / 0.15 / 0.68 / 0.17 onsets per second for 0.44 / 0.25 / 0.38 / 0.15 / 0.79 / 0.20 notes per second (notes struck together count once) |
+| Key | tonic right in 3 of 6; the relative major instead of the minor once (Bb for G aeolian); wrong twice (confidence 0.05 and 0.01, the second one below the threshold, so the knob is kept) |
+| Brightness | centroid 310 to 468 Hz |
+| Reverb length | found in 1 of 6 (6.0 s read for a 5.4 s reverb); "no free decay found" in the other five, so the knob is kept |
+
+What follows from these numbers:
+
+- Tempo and note density are the dependable readings.
+- Key is the least certain one (keys that share their notes fit almost equally well). The UI says so in the row.
+- Reverb length is only read where the sound falls freely for 0.6 s or more, at least 20 dB below the last loud
+  moment. In dense or padded music there is no such place and the knob is left alone rather than guessed.
+- Brightness maps to two knobs: a centroid of 350 Hz (the lab's own typical output, measured 300 to 410 Hz) keeps
+  register and lo-fi at their defaults; each octave brighter is +5 semitones of register and -20 points of lo-fi.
+
+### Listening questions for Elias (Phase 4)
+
+1. Drop in a track you own (bottom of the page). Do the five readings match what you hear? Which one is off?
+
+   Answer:
+
+2. Press "Use these settings", then Generate a few times. Is the new piece in the same general mood as your
+   track (speed, busyness, room) while clearly being different music?
+
+   Answer:
+
+3. Is the result too dark or too bright next to your track? Knobs: `BRIGHTNESS_NEUTRAL_HZ` (350 Hz) and the two
+   per-octave steps in `src/analysis/reference.ts`.
+
+   Answer:

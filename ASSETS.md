@@ -39,6 +39,12 @@ None are shipped. Tape hiss, rain and the pad are synthesised in code at run tim
 | --- | --- | --- | --- | --- |
 | Lucide icons | bundled from the npm package `lucide` | Lucide Contributors | [ISC](https://github.com/lucide-icons/lucide/blob/main/LICENSE) (parts derived from Feather, MIT) | <https://lucide.dev> |
 
+## Reference tracks
+
+None are shipped and none are stored. A track dropped into the "Reference" box is decoded in the browser, five
+numbers are read from it (tempo, key, note density, brightness, reverb length) and the audio is discarded. It is
+not uploaded, not saved and not used as sound material.
+
 ## Music
 
 All notes are generated from a seed by the code in `src/engine`. The repo contains
