@@ -220,6 +220,9 @@ export function paramLabel(key: NumericParamKey, value: number): string {
       const octave = Math.floor(value / 12) - 1;
       return `${KEY_NAMES[((value % 12) + 12) % 12]}${octave}`;
     }
+    case 'restProbability':
+      // The share of silent bars itself, not the position of the knob.
+      return `${Math.round(value * 100)}% silent`;
     case 'reverbSize':
       return `${value.toFixed(1)} s`;
     case 'length': {

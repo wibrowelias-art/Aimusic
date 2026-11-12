@@ -1,3 +1,6 @@
-// UI entry point. The interface is built in Phase 2; Phase 1 is engine + sound only.
-const app = document.querySelector<HTMLDivElement>('#app');
-if (app) app.textContent = 'Ambient Lab';
+import '@fontsource-variable/inter';
+import './ui/styles.css';
+import { mountApp } from './ui/app';
+
+const root = document.querySelector<HTMLElement>('#app');
+if (root) mountApp(root);
