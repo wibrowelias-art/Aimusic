@@ -52,6 +52,10 @@ no transcriptions, no MIDI files of existing music and no reference recordings.
 
 ## Style Lab
 
+- Built-in generator (`src/sketch`): no samples and no recordings. Every voice (pad, organ, keys, bell,
+  plucked string, bass, drums, wordless voice, noise bed) is synthesised in code; every note comes from the
+  seeded composer.
+
 - Generated songs: made by the ElevenLabs Music API under the owner's account. They are stored in
   `renders/style` on the owner's computer (git-ignored) and are never committed. What may be done with them
   (for example commercial use) follows the plan and terms of that account, not this repo.

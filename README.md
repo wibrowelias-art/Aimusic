@@ -1,12 +1,14 @@
 # Ambient Lab
 
-Two labs in one page:
+Two labs in one page, both free to use:
 
-- **Style Lab**: pick a style family (or mix two), add your own words, and a music AI makes
-  a new, original song from a prompt of plain sound descriptors. Then a lo-fi chain in the
-  browser makes it rougher: tape, room, bedroom mic, hiss, slowed.
+- **Style Lab**: pick a style family (or mix two), add your own words, press Generate. By
+  default the **built-in generator** makes the piece right in your browser: a seeded
+  composer plus synthesised instruments. No key, no account, no cost, nothing is sent
+  anywhere. Then a lo-fi chain makes it rougher: tape, room, bedroom mic, hiss, slowed.
+  If you want a music AI instead, there is an optional paid engine (ElevenLabs Music API).
 - **Ambient piano (offline)**: the built-in seeded piano engine. One click, one calm and
-  sparse piano piece. Free, no music AI.
+  sparse piano piece.
 
 Nothing is copied from or modelled on an existing song. No artist name or song title is
 ever sent anywhere. `STYLES.md` has the research behind the families, with sources.
@@ -15,48 +17,55 @@ ever sent anywhere. `STYLES.md` has the research behind the families, with sourc
 
 ```bash
 npm install
-cp .env.example .env   # then put your ElevenLabs API key into .env (never commit it)
 npm run dev            # open the printed URL
 ```
 
-No key yet? Set `STYLE_LAB_MOCK=1` in `.env`: Generate then returns a test signal for free,
-so you can try the page and the lo-fi chain. The offline piano needs no key at all.
+That is all for the free path. Only the optional music AI engine needs a key:
+`cp .env.example .env` and put your ElevenLabs API key into `.env` (never commit it).
 
 ```bash
-npm test               # composer, sound engine, chain, prompt, guard and backend checks
-npm run check:ui       # drive the real app in headless Chromium (Style Lab in mock mode)
+npm test               # composer, generator, sound engine, chain, prompt, guard and backend checks
+npm run check:ui       # drive the real app in headless Chromium (music AI engine in mock mode)
 npm run check:browser  # piano: same take in headless Chromium and in Node, side by side
 npm run measure        # piano: render full pieces offline, write the numbers logged in TUNING.md
-npm run style:test     # one test generation per family; prints the cost and stops until confirmed
+npm run style:test     # one free test piece per family, with lo-fi WAV + MP3 and a numbers report
 ```
 
-The two `check:*` scripts need Playwright with Chromium. `style:test` makes MP3s if ffmpeg is installed.
+The two `check:*` scripts need Playwright with Chromium. `style:test` makes MP3s if ffmpeg is installed;
+`npm run style:test -- --engine ai` uses the paid engine instead and stops until the cost is confirmed.
 
 ## Style Lab
 
 - Pick one of the five families at the top. **Mix with** blends a second one in; the slider sets how much.
-- **Your own words** are appended ("more tape hiss"). "no drums" also takes the drums out of the
-  instrument list and adds them to the Avoid line.
-- **Vocals** on or off, **Length**, and the model.
-- The **Prompt** box shows exactly the text that is sent. Edit it freely; "Rebuild from settings" undoes
-  your edits. "The exact request (JSON)" shows the whole request body.
+- **Built-in generator** (default, free) or **Music AI** (paid): the switch above the recipe.
+- **Your own words**: "more tape hiss", "no drums", "slower", "add a guitar". The built-in generator reads
+  them by rules and lists what it understood and what it did not. The music AI gets them in its prompt.
+- **Vocals**: the built-in generator adds a wordless synth voice (it cannot sing words). The music AI sings.
+- **Generate**. Every press is a new piece. Free takes are kept in the browser as seed + settings and are
+  made again from those; nothing is uploaded.
+- **Lo-fi chain** (runs in the browser): saturation, wow / flutter, drift, high-cut, room (small room or big
+  hall), bedroom mic, hiss, slowed, vocal blur. Turn a knob and it renders again. The table under the players
+  shows what was measured: key and tempo, loudness (target -16 LUFS), peak (below -1 dBFS), hiss and so on.
+- Downloads: the lo-fi version and the raw version as WAV.
+
+### The optional music AI engine
+
+- Needs `ELEVENLABS_API_KEY` in `.env` and the local dev server (`npm run dev`). The page never sees the key.
+- The **Prompt** box shows exactly the text that is sent. Edit it freely; "Rebuild from settings" undoes your
+  edits. "The exact request (JSON)" shows the whole request body.
 - **Names are blocked.** A quoted title, "in the style of ...", "by <Name>" or a capitalised name in the
   middle of a sentence stops Generate, on the page and again on the local server.
-- **Lyrics (optional)**, with vocals on: type topic words and press "Draft lyrics" for short plain lines
-  built around them, or write your own. Empty = the music AI writes its own words.
-- **Generate** always shows the estimated cost first and waits for your yes. The estimate is length times
-  the public per-minute price (`src/style/cost.ts`); the real charge is whatever ElevenLabs bills.
-- Every generation is kept in `renders/style` (audio + the exact request), so a paid one survives a reload.
-- **Lo-fi chain** (free, runs in the browser): saturation, wow / flutter, drift, high-cut, room (small room
-  or big hall), bedroom mic, hiss, slowed, vocal blur. Turn a knob and it renders again. The table under the
-  players shows what was measured: loudness (target -16 LUFS), peak (below -1 dBFS), hiss level and so on.
-- **Separate vocals** (extra cost, confirmed separately) splits a sung take into vocals and the rest, so the
-  vocal blur knob can act on the voice alone.
-- The API key lives in `.env` on your computer and stays on the local dev server. The page never sees it.
-  The backend only answers this computer unless `STYLE_LAB_ALLOW_REMOTE=1` is set.
+- **Lyrics (optional)**: type topic words and press "Draft lyrics", or write your own. Empty = the model
+  writes its own words.
+- **Generate** shows the estimated cost first and waits for your yes: length times the public per-minute
+  price (`src/style/cost.ts`). The real charge is whatever ElevenLabs bills.
+- Every paid generation is kept in `renders/style` (audio + the exact request).
+- **Separate vocals** (extra cost, confirmed separately) splits a sung take so the vocal blur can act on
+  the voice alone. The built-in generator does not need this: its voice is already its own stem.
+- `STYLE_LAB_MOCK=1` in `.env` makes this engine return a test signal for free (for trying the page).
 
-Deploying this to a static host would leave the Style Lab without its backend (the piano would still
-work). A hosted version needs the same routes as server functions; not built yet.
+The free path is plain static files: it works on any static host. The music AI engine needs its backend
+routes; a hosted version of those is not built.
 
 ## Ambient piano (offline)
 
@@ -75,9 +84,10 @@ work). A hosted version needs the same routes as server functions; not built yet
 
 ## Layout
 
+- `src/sketch` - the built-in generator: arrangement per family, synthesised voices, word rules (free)
 - `src/style` - style families, prompt builder, name guard, cost estimate, lyrics helper, request body
 - `src/postfx` - the lo-fi chain (offline Web Audio graph + master stage)
-- `server` - local backend: ElevenLabs Music client, key handling, storage of generations, mock mode
+- `server` - local backend for the optional music AI engine: ElevenLabs client, key handling, storage, mock mode
 - `src/engine` - seeded piano composer (motif, harmony, form, performance), MIDI export, piece validation
 - `src/audio` - sampler, procedural reverb / noise / pad, offline render, WAV, realtime player
 - `src/analysis` - measurements on audio (levels, loudness, spectrum, RT60), targets, reference traits
@@ -94,4 +104,5 @@ work). A hosted version needs the same routes as server functions; not built yet
 ## Credits
 
 Piano: Salamander Grand Piano V3 by Alexander Holm, CC BY 3.0. Font: Inter (OFL 1.1). Icons: Lucide (ISC).
-Style Lab generations come from the ElevenLabs Music API under your own account and its terms.
+Built-in generator: all sound is synthesised in code. Music AI generations (optional) come from the
+ElevenLabs Music API under your own account and its terms.

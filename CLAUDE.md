@@ -1,9 +1,10 @@
 # Ambient Lab - project rules
 
 Ambient Lab is a web app with two labs. The Style Lab turns a style family (a list of plain
-sound descriptors) into a prompt, gets a new ORIGINAL song from a music AI (ElevenLabs Music
-API) and runs it through a lo-fi post-processing chain. "Ambient piano (offline)" is the
-seeded piano engine: calm, sparse, original piano pieces with one click. The owner is Elias.
+sound descriptors) into a new ORIGINAL piece and runs it through a lo-fi post-processing
+chain. By default the piece comes from the built-in generator (`src/sketch`: seeded composer
++ synthesised voices, free, offline). A paid music AI (ElevenLabs Music API) is an optional
+second engine. "Ambient piano (offline)" is the seeded piano engine. The owner is Elias.
 
 ## Hard rules (never break these)
 
@@ -19,7 +20,8 @@ seeded piano engine: calm, sparse, original piano pieces with one click. The own
    (the research with names lives in `STYLES.md` only).
 1c. **Research is text only.** Never download, stream or analyse the audio of a reference
    song. Public text only (reviews, interviews, wikis, label pages), sources cited in `STYLES.md`.
-1d. **Money.** Every call to the music API shows its estimated cost first and needs a yes
+1d. **Free by default.** The default path costs nothing and sends nothing anywhere; keep it
+   that way. Every call to the music API shows its estimated cost first and needs a yes
    (the server refuses a request without the matching `confirmUsd`). The API key lives in a
    local `.env` (git-ignored), is read on the Node side only and is never committed or logged.
    Tests and checks run in mock mode; they never call the API.
@@ -43,11 +45,13 @@ seeded piano engine: calm, sparse, original piano pieces with one click. The own
   `src/analysis/types.ts`, `src/analysis/targets.ts`, `src/style/types.ts`, `src/style/take.ts`,
   `src/postfx/settings.ts`. Read them before writing code. Do not change a contract without
   saying so in your report.
-- Style Lab: `src/style` (profiles, prompt, guard, cost, lyrics, request body; pure),
+- Style Lab: `src/sketch` (built-in generator: recipes per family, arranger, synthesised
+  voices, word rules; pure and deterministic, no Web Audio), `src/style` (profiles, prompt,
+  guard, cost, lyrics, request body; pure),
   `src/postfx` (lo-fi chain; knob mappings in `constants.ts`), `server` (local backend mounted
   by `vite.config.ts` on `/api/style`; generations are stored in `renders/style`, git-ignored).
   `vite.config.ts` must not import local files (it loads `server/plugin.ts` through Vite).
-- Engine code (`src/engine`, `src/analysis`, `src/style`, pure parts of `src/audio` and `src/postfx`) must be deterministic:
+- Engine code (`src/engine`, `src/sketch`, `src/analysis`, `src/style`, pure parts of `src/audio` and `src/postfx`) must be deterministic:
   no `Math.random()`, no `Date.now()`. All randomness comes from the seeded RNG.
 - Audio code takes its `BaseAudioContext` / context factory as a parameter so the same code
   runs in the browser and under `node-web-audio-api` in tests. Never touch `window` in engine code.

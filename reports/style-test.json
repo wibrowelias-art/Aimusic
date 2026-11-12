@@ -1,0 +1,347 @@
+{
+  "lengthSec": 60,
+  "engine": "sketch",
+  "mock": false,
+  "rows": [
+    {
+      "family": "ambient-keys",
+      "label": "Ambient keys + pads",
+      "takeId": "sketch-seed1-ambient-keys",
+      "engine": "sketch",
+      "sketch": {
+        "seed": 1,
+        "key": "G dorian",
+        "tempo": 53,
+        "bars": 13,
+        "parts": [
+          "synth pad",
+          "organ-like chords",
+          "soft keys",
+          "low synth bass",
+          "faint clicks"
+        ]
+      },
+      "vocals": false,
+      "model": "built-in",
+      "mock": false,
+      "estimateUsd": 0,
+      "generationSec": 4.7,
+      "prompt": "",
+      "fx": {
+        "saturation": 0.15,
+        "wobble": 0.35,
+        "drift": 0.2,
+        "highCutHz": 10000,
+        "room": 0.55,
+        "roomType": "hall",
+        "mic": 0,
+        "hissDb": -56,
+        "slowedPct": 0,
+        "vocalBlur": 0
+      },
+      "raw": {
+        "durationSec": 63.3,
+        "lufs": -17.1,
+        "peakDb": -6.02,
+        "centroidHz": 220,
+        "sideDb": -4
+      },
+      "lofi": {
+        "file": "renders/style-test/1-ambient-keys-lofi.wav",
+        "durationSec": 67.8,
+        "lufs": -16,
+        "peakDb": -4.7,
+        "truePeakDb": -4.7,
+        "limiterMaxDb": 0,
+        "limitedShare": 0,
+        "centroidHz": 241,
+        "sideDb": -3.4,
+        "hissDb": -56,
+        "highCutHz": 10000,
+        "playbackRate": 1,
+        "pitchSemitones": 0,
+        "wobbleMaxCents": 12.3,
+        "onTarget": true
+      },
+      "mp3": {
+        "file": "renders/style-test/1-ambient-keys-lofi.mp3",
+        "lufs": -16.3,
+        "peakDb": -4.97,
+        "truePeakDb": -4.97
+      }
+    },
+    {
+      "family": "bedroom-demo",
+      "label": "Bedroom demo",
+      "takeId": "sketch-seed2-bedroom-demo",
+      "engine": "sketch",
+      "sketch": {
+        "seed": 2,
+        "key": "D major pentatonic",
+        "tempo": 64,
+        "bars": 16,
+        "parts": [
+          "long synth tone",
+          "looped guitar figure",
+          "drum machine tick",
+          "drum machine thump",
+          "small keyboard",
+          "soft bass notes"
+        ]
+      },
+      "vocals": false,
+      "model": "built-in",
+      "mock": false,
+      "estimateUsd": 0,
+      "generationSec": 1.6,
+      "prompt": "",
+      "fx": {
+        "saturation": 0.45,
+        "wobble": 0.5,
+        "drift": 0.3,
+        "highCutHz": 9000,
+        "room": 0.25,
+        "roomType": "room",
+        "mic": 0.7,
+        "hissDb": -50,
+        "slowedPct": 0,
+        "vocalBlur": 0.2
+      },
+      "raw": {
+        "durationSec": 64.2,
+        "lufs": -22,
+        "peakDb": -6.02,
+        "centroidHz": 576,
+        "sideDb": -4
+      },
+      "lofi": {
+        "file": "renders/style-test/2-bedroom-demo-lofi.wav",
+        "durationSec": 64.9,
+        "lufs": -16,
+        "peakDb": -5.2,
+        "truePeakDb": -5.2,
+        "limiterMaxDb": 0,
+        "limitedShare": 0,
+        "centroidHz": 534,
+        "sideDb": -9.3,
+        "hissDb": -50,
+        "highCutHz": 9000,
+        "playbackRate": 1,
+        "pitchSemitones": 0,
+        "wobbleMaxCents": 17.9,
+        "onTarget": true
+      },
+      "mp3": {
+        "file": "renders/style-test/2-bedroom-demo-lofi.mp3",
+        "lufs": -16.3,
+        "peakDb": -5.48,
+        "truePeakDb": -5.48
+      }
+    },
+    {
+      "family": "dream-folk",
+      "label": "Dream-folk vocal",
+      "takeId": "sketch-seed3-dream-folk",
+      "engine": "sketch",
+      "sketch": {
+        "seed": 3,
+        "key": "F aeolian",
+        "tempo": 58,
+        "bars": 14,
+        "parts": [
+          "picked guitar",
+          "sparse keys",
+          "minimal bass",
+          "quiet synth drone",
+          "outdoor noise bed",
+          "wordless lead voice",
+          "wordless backing voices"
+        ]
+      },
+      "vocals": true,
+      "model": "built-in",
+      "mock": false,
+      "estimateUsd": 0,
+      "generationSec": 3.7,
+      "prompt": "",
+      "fx": {
+        "saturation": 0.2,
+        "wobble": 0.25,
+        "drift": 0.15,
+        "highCutHz": 11000,
+        "room": 0.5,
+        "roomType": "hall",
+        "mic": 0.3,
+        "hissDb": -56,
+        "slowedPct": 0,
+        "vocalBlur": 0.5
+      },
+      "raw": {
+        "durationSec": 62.2,
+        "lufs": -18.8,
+        "peakDb": -6.02,
+        "centroidHz": 665,
+        "sideDb": -1.3
+      },
+      "lofi": {
+        "file": "renders/style-test/3-dream-folk-lofi.wav",
+        "durationSec": 66.7,
+        "lufs": -16,
+        "peakDb": -5.21,
+        "truePeakDb": -5.2,
+        "limiterMaxDb": 0,
+        "limitedShare": 0,
+        "centroidHz": 541,
+        "sideDb": -2.9,
+        "hissDb": -56,
+        "highCutHz": 11000,
+        "playbackRate": 1,
+        "pitchSemitones": 0,
+        "wobbleMaxCents": 9.1,
+        "onTarget": true
+      },
+      "mp3": {
+        "file": "renders/style-test/3-dream-folk-lofi.mp3",
+        "lufs": -16.3,
+        "peakDb": -5.48,
+        "truePeakDb": -5.48
+      }
+    },
+    {
+      "family": "slowcore",
+      "label": "Slowcore guitar",
+      "takeId": "sketch-seed4-slowcore",
+      "engine": "sketch",
+      "sketch": {
+        "seed": 4,
+        "key": "G aeolian",
+        "tempo": 64,
+        "bars": 16,
+        "parts": [
+          "clean guitar",
+          "distorted guitar (middle part)",
+          "single-note guitar",
+          "bass guitar",
+          "kick drum",
+          "snare",
+          "cymbal ticks"
+        ]
+      },
+      "vocals": false,
+      "model": "built-in",
+      "mock": false,
+      "estimateUsd": 0,
+      "generationSec": 1.4,
+      "prompt": "",
+      "fx": {
+        "saturation": 0.5,
+        "wobble": 0.3,
+        "drift": 0.2,
+        "highCutHz": 10000,
+        "room": 0.35,
+        "roomType": "room",
+        "mic": 0.5,
+        "hissDb": -52,
+        "slowedPct": 0,
+        "vocalBlur": 0.25
+      },
+      "raw": {
+        "durationSec": 64.3,
+        "lufs": -22.5,
+        "peakDb": -6.02,
+        "centroidHz": 830,
+        "sideDb": -17.9
+      },
+      "lofi": {
+        "file": "renders/style-test/4-slowcore-lofi.wav",
+        "durationSec": 65,
+        "lufs": -16,
+        "peakDb": -4.17,
+        "truePeakDb": -4.05,
+        "limiterMaxDb": 0,
+        "limitedShare": 0,
+        "centroidHz": 735,
+        "sideDb": -17.7,
+        "hissDb": -52,
+        "highCutHz": 10000,
+        "playbackRate": 1,
+        "pitchSemitones": 0,
+        "wobbleMaxCents": 10.4,
+        "onTarget": true
+      },
+      "mp3": {
+        "file": "renders/style-test/4-slowcore-lofi.mp3",
+        "lufs": -16.3,
+        "peakDb": -4.34,
+        "truePeakDb": -4.23
+      }
+    },
+    {
+      "family": "slowed-reverb",
+      "label": "Slowed + reverb",
+      "takeId": "sketch-seed5-slowed-reverb",
+      "engine": "sketch",
+      "sketch": {
+        "seed": 5,
+        "key": "E dorian",
+        "tempo": 71,
+        "bars": 18,
+        "parts": [
+          "synth pads",
+          "slow drone",
+          "bell-like tones",
+          "deep bass",
+          "faint pulse"
+        ]
+      },
+      "vocals": false,
+      "model": "built-in",
+      "mock": false,
+      "estimateUsd": 0,
+      "generationSec": 2.3,
+      "prompt": "",
+      "fx": {
+        "saturation": 0.3,
+        "wobble": 0.4,
+        "drift": 0.3,
+        "highCutHz": 8000,
+        "room": 0.5,
+        "roomType": "hall",
+        "mic": 0.2,
+        "hissDb": -54,
+        "slowedPct": 14,
+        "vocalBlur": 0.4
+      },
+      "raw": {
+        "durationSec": 64.9,
+        "lufs": -17.4,
+        "peakDb": -6.02,
+        "centroidHz": 192,
+        "sideDb": -4.4
+      },
+      "lofi": {
+        "file": "renders/style-test/5-slowed-reverb-lofi.wav",
+        "durationSec": 80,
+        "lufs": -16,
+        "peakDb": -5.56,
+        "truePeakDb": -5.56,
+        "limiterMaxDb": 0,
+        "limitedShare": 0,
+        "centroidHz": 182,
+        "sideDb": -5,
+        "hissDb": -54,
+        "highCutHz": 8000,
+        "playbackRate": 0.86,
+        "pitchSemitones": -2.61,
+        "wobbleMaxCents": 15.4,
+        "onTarget": true
+      },
+      "mp3": {
+        "file": "renders/style-test/5-slowed-reverb-lofi.mp3",
+        "lufs": -16.3,
+        "peakDb": -5.85,
+        "truePeakDb": -5.85
+      }
+    }
+  ]
+}

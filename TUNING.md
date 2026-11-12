@@ -421,35 +421,101 @@ three tones and noise bursts.
 - Compressor and wave shaper are the browser's own nodes: Chromium and node-web-audio-api differ slightly in
   their curves. The master stage is plain arithmetic and identical everywhere.
 
-### Test generations (one per family)
+### Music AI test generations
 
-Confirmed by Elias on 2026-11-12: 5 x 1:00, estimated $0.75 in total, model `music_v2_5`, no stems.
-Not run yet: the build environment has no API key (the key form was declined). To run them:
-`npm run style:test -- --length 60 --confirm-usd 0.75` with the key in `.env`. The measured numbers land in
-`reports/style-test.md`; copy the table here when it exists.
+Confirmed by Elias on 2026-11-12 (5 x 1:00, estimated $0.75), then not run: the key form was declined and
+Elias asked for the lab to be free instead. The paid engine is still there and still untried against the
+live API. `npm run style:test -- --engine ai --length 60 --confirm-usd 0.75` would run it.
 
-### Listening questions for Elias (Style Lab)
+## 6. Built-in generator (free, default engine)
 
-Three per family. Nothing in the prompts or the chain gets tuned before the answers are written down here.
+Asked for by Elias on 2026-11-12 ("make this free"). The Style Lab no longer needs a key or money: the
+default engine composes with the seeded composer from `src/engine` and plays the result with synthesised
+voices (`src/sketch`). The lo-fi chain from section 5 is unchanged and runs on its output.
 
-**A. Ambient keys + pads** (hall 55 %, high-cut 10 kHz, hiss -56 dB)
+### What plays, and how it is made (all in `src/sketch/synth.ts`)
 
-1. Is there enough empty space between the notes, or does it play too much?
+| Voice | How it is synthesised |
+| --- | --- |
+| pad | three detuned band-limited saws per note (+-7 cents), low-pass 1.3 kHz + 2.6 kHz, 1.2 s attack, 2.2 s release |
+| organ | four sine partials (1, 0.5, 0.22, 0.1), slow tremolo |
+| keys / bell | two-operator FM, ratio 1 (keys) or 3.5 (bell), falling index, ring time by pitch |
+| toy keyboard | triangle with an octave partial, 5.5 Hz vibrato |
+| pluck (guitars) | Karplus-Strong string with an all-pass for exact tuning; ring 1.5 to 6 s by pitch; overdrive = tanh, x25 at drive 1, then 3.2 kHz low-pass |
+| bass / sub | sine with a decaying octave partial / plain sine with 0.5 s attack |
+| drone | sine + octave + twelfth, 2.5 s swells, 0.07 Hz level movement |
+| kick / snare / hat / tick | sine sweep 114 -> 44 Hz / noise + 185 Hz tone / high-passed noise 22 ms / 6 ms click |
+| voice | saw with late 5.2 Hz vibrato and 25 % noise, through three formants (380, 820, 2500 Hz). No words. |
+| air | band-passed noise around 480 Hz with a 0.06 Hz swell |
+
+Raw mix peak is fixed at -6.0 dBFS; the chain sets the loudness.
+
+### Checks (`tests/sketch`)
+
+- Same request gives identical samples; another seed gives another piece.
+- Every pitched note of every part is inside the piece's key and mode (5 families x 4 seeds, vocals on).
+- Each family has its instrument groups; the distorted slowcore guitar only plays in the middle section.
+- Mixing never doubles melody, bass, drums or voice; a share under 15 % adds nothing.
+- Words: "no drums" removes the drum parts, "more guitar" is x1.5 gain, "slower" is -8 BPM, "more tape hiss"
+  is +4 dB on the hiss knob (capped at -45), unknown clauses are reported back.
+- Voice on: vocals and backing stems exist and add up to the mix (error below 1e-5).
+- All five families pass the chain on target (-16 LUFS +-0.5, peak <= -1 dBFS).
+- In the browser (`check:ui`): Generate sends no request at all, takes are stored as seed + settings, a reload
+  gives the same key and tempo, a 60 s piece takes about 6 s to compose, synthesise and run through the chain.
+
+### The five test pieces sent to Elias on 2026-11-12 (`npm run style:test -- --length 60 --seed 1`)
+
+| Family | Seed | Key | Tempo | Parts |
+| --- | --- | --- | --- | --- |
+| Ambient keys + pads | 1 | G dorian | 53 BPM, 13 bars | synth pad, organ-like chords, soft keys, low synth bass, faint clicks |
+| Bedroom demo | 2 | D major pentatonic | 64 BPM, 16 bars | long synth tone, looped guitar figure, drum machine tick and thump, small keyboard, soft bass notes |
+| Dream-folk vocal | 3 | F aeolian | 58 BPM, 14 bars | picked guitar, sparse keys, minimal bass, quiet synth drone, outdoor noise bed, wordless lead and backing voices |
+| Slowcore guitar | 4 | G aeolian | 64 BPM, 16 bars | clean guitar, distorted guitar (middle part), single-note guitar, bass guitar, kick, snare, cymbal ticks |
+| Slowed + reverb | 5 | E dorian | 71 BPM, 18 bars | synth pads, slow drone, bell-like tones, deep bass, faint pulse |
+
+| Family | Raw LUFS | Raw centroid Hz | Lo-fi LUFS | Lo-fi peak dBFS | MP3 192k peak dBFS | Lo-fi centroid Hz | Side dB raw -> lo-fi | Hiss dBFS | High-cut | Speed | Length |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Ambient keys + pads | -17.1 | 220 | -16.0 | -4.70 | -4.97 | 241 | -4.0 -> -3.4 | -56 | 10 kHz | 100 % | 1:03 -> 1:08 |
+| Bedroom demo | -22.0 | 576 | -16.0 | -5.20 | -5.48 | 534 | -4.0 -> -9.3 | -50 | 9 kHz | 100 % | 1:04 -> 1:05 |
+| Dream-folk vocal | -18.8 | 665 | -16.0 | -5.21 | -5.48 | 541 | -1.3 -> -2.9 | -56 | 11 kHz | 100 % | 1:02 -> 1:07 |
+| Slowcore guitar | -22.5 | 830 | -16.0 | -4.17 | -4.34 | 735 | -17.9 -> -17.7 | -52 | 10 kHz | 100 % | 1:04 -> 1:05 |
+| Slowed + reverb | -17.4 | 192 | -16.0 | -5.56 | -5.85 | 182 | -4.4 -> -5.0 | -54 | 8 kHz | 86 % | 1:05 -> 1:20 |
+
+What the numbers show, without judging them: the two pad-heavy families measure dark (centroid around 200 Hz)
+and wide (side within 5 dB of mid); the slowcore piece is the brightest and close to mono (side 18 dB under
+mid: guitars, bass and drums sit near the centre).
+
+### Known limits
+
+- No sung words. "Vocals" adds a synthesised vowel that follows the melody or holds chord tones.
+- The instruments are simple models. How close they come to the families is for Elias to say; nothing here
+  was tuned by ear.
+- The word rules know a fixed list (see the hint under the plan in the page). Free text beyond it is reported
+  as not understood.
+- One piece = one seed. There is no "Again" (same idea, played differently) in the Style Lab yet.
+
+### Listening questions for Elias (the five free test pieces)
+
+Three per family. Nothing in the generator or the chain gets tuned before the answers are written down here.
+
+**A. Ambient keys + pads** (`1-ambient-keys-lofi.mp3`: hall 55 %, high-cut 10 kHz, hiss -56 dB)
+
+1. Is there enough empty space between the notes of the keys, or does too much (or too little) happen?
 
    Answer:
 
-2. The reverb tail (hall, RT60 4.5 s): too long, about right, or too short?
+2. It measures dark (centroid 241 Hz). Too dull, about right, or too bright?
 
    Answer:
 
-3. The top end with the 10 kHz high-cut: too dull, right, or too bright?
+3. The reverb tail (hall, RT60 4.5 s): too long, about right, or too short?
 
    Answer:
 
-**B. Bedroom demo** (saturation 45 %, wow / flutter 50 %, bedroom mic 70 %, small room 25 %, hiss -50 dB)
+**B. Bedroom demo** (`2-bedroom-demo-lofi.mp3`: saturation 45 %, wow / flutter 50 %, bedroom mic 70 %, hiss -50 dB)
 
-1. Compare the two players. Does the lo-fi one come across as recorded at home on tape, or as a clean track
-   with effects on top? Which knob would you push first: saturation, wow / flutter or bedroom mic?
+1. Does it come across as a home tape recording, or as clean synths with effects on top? Which knob would
+   you push first: saturation, wow / flutter or bedroom mic?
 
    Answer:
 
@@ -457,48 +523,51 @@ Three per family. Nothing in the prompts or the chain gets tuned before the answ
 
    Answer:
 
-3. Did the music AI make one loose idea that just runs, or a fully arranged song? Which do you want?
+3. The guitar figure repeats the same picking pattern in every bar, and a drum machine ticks under it. Keep
+   both, vary the figure, or drop the drum machine?
 
    Answer:
 
-**C. Dream-folk vocal** (hall 50 %, bedroom mic 30 %, high-cut 11 kHz; vocal blur 50 % only with stems)
+**C. Dream-folk vocal** (`3-dream-folk-lofi.mp3`: hall 50 %, vocal blur 50 %, high-cut 11 kHz)
 
-1. The voice: hushed and low in the mix, or too clear and up front?
-
-   Answer:
-
-2. The words the model wrote: fine, or would you rather have wordless humming or your own lyrics?
+1. The wordless synth voice: usable as a stand-in for a voice, or does it break the mood (then vocals off
+   would be the default for this family)?
 
    Answer:
 
-3. Reverb on the whole song: too washed out, right, or too dry?
+2. Voice against guitar: too loud, about right, or too quiet?
 
    Answer:
 
-**D. Slowcore guitar** (saturation 50 %, small room 35 %, bedroom mic 50 %, hiss -52 dB)
-
-1. Slow and dragging enough (the prompt asks for 66-78 BPM), or too tidy and too fast?
+3. Reverb on the whole piece: too washed out, right, or too dry?
 
    Answer:
 
-2. The guitars: too clean, right, or too distorted after the chain?
+**D. Slowcore guitar** (`4-slowcore-lofi.mp3`: saturation 50 %, small room 35 %, bedroom mic 50 %)
+
+1. Slow and dragging enough (64 BPM, hits up to 12 ms off the grid), or too stiff?
 
    Answer:
 
-3. It is instrumental by default. Does that work, or do you want the soft-spoken voice switched on?
+2. The guitars are a plucked-string model. Close enough to work with, or too thin? And the distorted middle
+   part: too much, right, or too little?
 
    Answer:
 
-**E. Slowed + reverb** (86 % speed = -2.6 semitones, hall 50 % plus the slowed send, high-cut 8 kHz)
+3. Drums: too loud, about right, or too quiet?
+
+   Answer:
+
+**E. Slowed + reverb** (`5-slowed-reverb-lofi.mp3`: 86 % speed = -2.6 semitones, hall, high-cut 8 kHz)
 
 1. Is 86 % speed slow enough, or should it go further (the knob goes to 75 %)?
 
    Answer:
 
-2. With the 8 kHz high-cut and the hall: blurry in the way you want, or just muddy?
+2. It measures very dark (centroid 182 Hz). Blurry in the way you want, or just muddy?
 
    Answer:
 
-3. Did the generated track have a beat? Do you want one, a faint one, or none?
+3. The faint pulse on the first beat: keep it, make it louder, or none?
 
    Answer:

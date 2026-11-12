@@ -436,9 +436,28 @@ from your own note and not from a source, it says so - those are your taste, kep
 - Chain preset: slowed 14 % (pitch down about 2.6 semitones) with the extra hall send, big
   hall on top, high-cut 8 kHz, hiss -54 dB.
 
+## How the free built-in generator plays each family
+
+The default engine has no text-to-music model. It reads the family as a parts list
+(`src/sketch/families.ts`); the notes come from the seeded composer at run time.
+
+| Family | Parts | Modes it draws from | Tempo |
+|--------|-------|---------------------|-------|
+| Ambient keys + pads | synth pad, organ-like chords, soft keys (melody), low synth bass, faint clicks | lydian, major pentatonic, dorian | 50-62 BPM |
+| Bedroom demo | long synth tone, looped guitar figure, drum machine tick and thump, small keyboard (melody), soft bass notes | major pentatonic, dorian, lydian | 60-70 BPM |
+| Dream-folk vocal | picked guitar, sparse keys (melody), minimal bass, quiet synth drone, outdoor noise bed, wordless lead and backing voices | aeolian, dorian, major pentatonic | 56-68 BPM |
+| Slowcore guitar | clean strummed guitar, distorted guitar in the middle part, single-note guitar (melody), bass guitar, kick, snare, cymbal ticks | aeolian, dorian, major pentatonic | 60-70 BPM |
+| Slowed + reverb | synth pads, slow drone, bell-like tones (melody), deep bass, faint pulse | aeolian, dorian | 64-72 BPM, then slowed 14 % by the chain |
+
+What it cannot do: sing words (the voice is a synthesised vowel), play real instruments
+(guitars are a plucked-string model, drums are synthesised hits), or follow free text beyond
+its word rules. Those are what the optional music AI engine is for.
+
 ## What is deliberately not here
 
 - No melody, chord, lyric or arrangement detail of any of the nine tracks.
 - No artist names or titles in `src/` - the profiles in the app are the descriptor lists above.
+- No note in the built-in generator is written down anywhere: it has no note tables, only
+  rules for which part plays chord tones, roots or the composed melody.
 - "Ambient piano (offline)" is the old seeded piano engine. It is not derived from any of
   this and never calls the music API.

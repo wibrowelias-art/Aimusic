@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
- * `npm run style:test -- [--length 60] [--families a,b] [--mock] [--confirm-usd 0.75]`
+ * `npm run style:test -- [--engine sketch|ai] [--length 60] [--families a,b] [--seed 1]`
  *
- * One test generation per style family, through the same local backend the page uses
- * (name guard, cost check, files kept in renders/style), then that family's lo-fi chain
- * preset, measurements, and an MP3 next to the WAV (the MP3 needs ffmpeg).
+ * One test piece per style family, then that family's lo-fi chain preset, measurements,
+ * and an MP3 next to the WAV (the MP3 needs ffmpeg).
  *
- * Without --confirm-usd it only prints the plan and the estimated total, and stops.
- * With it, the number has to match the printed total. Nothing is sent before that.
+ *   --engine sketch (default): the built-in generator. Free, offline, nothing is sent.
+ *   --engine ai: the ElevenLabs Music API through the same local backend the page uses
+ *     (name guard, cost check, files kept in renders/style). Without --confirm-usd it
+ *     only prints the plan and the estimated total and stops; with it, the number has
+ *     to match the printed total. Add --mock for the free test signal.
  *
  * Output: renders/style-test/<n>-<family>-{raw.*,lofi.wav,lofi.mp3}, reports/style-test.{json,md}
  */
@@ -27,6 +29,7 @@ const value = (name) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 if (flag('mock')) process.env.STYLE_LAB_MOCK = '1';
+const engine = value('engine') === 'ai' ? 'ai' : 'sketch';
 
 const server = await createServer({ logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
 await server.listen();
@@ -38,6 +41,7 @@ const { estimateCost, formatUsd, formatLength } = await load('/src/style/cost.ts
 const { renderPostFx } = await load('/src/postfx/index.ts');
 const { encodeWav } = await load('/src/audio/wav.ts');
 const { integratedLufs, truePeakDb, peakDb, spectralCentroid } = await load('/src/analysis/index.ts');
+const { makeSketch, renderSketch } = await load('/src/sketch/index.ts');
 
 const SR = 48000;
 const outDir = 'renders/style-test';
@@ -62,25 +66,30 @@ const r1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 
 try {
-  const status = await (await fetch(`${base}status`)).json();
+  const status = engine === 'ai' ? await (await fetch(`${base}status`)).json() : { mock: false, keyPresent: true, usdPerMinute: 0, defaultModel: 'built-in' };
+  const free = engine === 'sketch' || status.mock;
+  const baseSeed = Number(value('seed') ?? 1);
   const families = (value('families')?.split(',') ?? [...FAMILY_IDS]).filter((id) => FAMILY_IDS.includes(id));
   const lengthSec = Number(value('length') ?? 60);
   const plan = families.map((id) => {
     const profile = PROFILES[id];
     const request = { a: id, b: null, mix: 0, words: '', vocals: profile.vocalsDefault, lengthSec };
-    return { id, profile, request, prompt: buildPrompt(request), usd: status.mock ? 0 : estimateCost(lengthSec, { usdPerMinute: status.usdPerMinute }).usd };
+    return { id, profile, request, prompt: buildPrompt(request), usd: free ? 0 : estimateCost(lengthSec, { usdPerMinute: status.usdPerMinute }).usd };
   });
   const total = Math.round(plan.reduce((sum, p) => sum + p.usd, 0) * 1000) / 1000;
 
-  console.log(`Style test: ${plan.length} generation(s) of ${formatLength(lengthSec)} each${status.mock ? ' (MOCK MODE: test signal, no API call)' : ''}\n`);
-  for (const p of plan) {
-    console.log(`--- ${p.profile.label} (${p.id}), ${p.request.vocals ? 'with vocals' : 'instrumental'}, ${formatUsd(p.usd)}`);
-    console.log(`${p.prompt}\n`);
+  const how = engine === 'sketch' ? ' with the built-in generator (free, nothing is sent)' : status.mock ? ' (MOCK MODE: test signal, no API call)' : ' with the music AI';
+  console.log(`Style test: ${plan.length} piece(s) of ${formatLength(lengthSec)} each${how}\n`);
+  if (engine === 'ai') {
+    for (const p of plan) {
+      console.log(`--- ${p.profile.label} (${p.id}), ${p.request.vocals ? 'with vocals' : 'instrumental'}, ${formatUsd(p.usd)}`);
+      console.log(`${p.prompt}\n`);
+    }
+    console.log(`Estimated total: ${formatUsd(total)} (${status.usdPerMinute.toFixed(2)} USD per minute; the real charge is whatever the provider bills)`);
   }
-  console.log(`Estimated total: ${formatUsd(total)} (${status.usdPerMinute.toFixed(2)} USD per minute; the real charge is whatever the provider bills)`);
 
   const confirmed = value('confirm-usd');
-  if (confirmed === undefined || Math.abs(Number(confirmed) - total) > 0.005) {
+  if (engine === 'ai' && (confirmed === undefined || Math.abs(Number(confirmed) - total) > 0.005)) {
     console.log(`\nNothing was sent. To run it: npm run style:test -- ${args.filter((a, i) => a !== '--confirm-usd' && args[i - 1] !== '--confirm-usd').join(' ')} --confirm-usd ${total}`.replace(/\s+/g, ' '));
     process.exitCode = 0;
   } else if (!status.mock && !status.keyPresent) {
@@ -95,35 +104,49 @@ try {
       n += 1;
       const started = performance.now();
       process.stdout.write(`\n[${n}/${plan.length}] ${p.profile.label}: generating... `);
-      const res = await fetch(`${base}compose`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: p.prompt,
-          lengthSec,
-          vocals: p.request.vocals,
-          lyrics: '',
-          modelId: value('model') ?? status.defaultModel,
-          confirmUsd: p.usd,
-          meta: { profileA: p.id, profileB: null, mix: 0, words: '', fx: p.profile.fx },
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        exitCode = 1;
-        console.log(`FAILED (${res.status} ${body.error?.code}): ${body.error?.message}`);
-        if (body.error?.suggestion) console.log(`  The API suggests this prompt instead:\n  ${body.error.suggestion}`);
-        rows.push({ family: p.id, label: p.profile.label, error: body.error });
-        continue;
-      }
-      const take = body;
-      const genSec = (performance.now() - started) / 1000;
-      const rawPath = join('renders/style', take.audioFile);
-      const raw = await decode(readFileSync(rawPath));
       const stem = `${n}-${p.id}`;
-      copyFileSync(rawPath, join(outDir, `${stem}-raw.${take.audioFile.split('.').pop()}`));
+      let take;
+      let raw;
+      let stems = null;
+      let sketch = null;
+      if (engine === 'sketch') {
+        const seed = baseSeed + n - 1;
+        sketch = makeSketch({ ...p.request, seed });
+        const audio = renderSketch(sketch, SR);
+        raw = audio.full;
+        stems = audio.stems;
+        take = { id: `sketch-seed${seed}-${p.id}`, vocals: p.request.vocals, model: 'built-in', mock: false, costUsd: 0, prompt: '' };
+        writeFileSync(join(outDir, `${stem}-raw.wav`), encodeWav(raw, SR));
+      } else {
+        const res = await fetch(`${base}compose`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: p.prompt,
+            lengthSec,
+            vocals: p.request.vocals,
+            lyrics: '',
+            modelId: value('model') ?? status.defaultModel,
+            confirmUsd: p.usd,
+            meta: { profileA: p.id, profileB: null, mix: 0, words: '', fx: p.profile.fx },
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          exitCode = 1;
+          console.log(`FAILED (${res.status} ${body.error?.code}): ${body.error?.message}`);
+          if (body.error?.suggestion) console.log(`  The API suggests this prompt instead:\n  ${body.error.suggestion}`);
+          rows.push({ family: p.id, label: p.profile.label, error: body.error });
+          continue;
+        }
+        take = body;
+        const rawPath = join('renders/style', take.audioFile);
+        raw = await decode(readFileSync(rawPath));
+        copyFileSync(rawPath, join(outDir, `${stem}-raw.${take.audioFile.split('.').pop()}`));
+      }
+      const genSec = (performance.now() - started) / 1000;
       process.stdout.write(`${genSec.toFixed(0)} s. Lo-fi chain... `);
-      const { pcm, report } = await renderPostFx({ sampleRate: SR, full: raw }, p.profile.fx, {
+      const { pcm, report } = await renderPostFx({ sampleRate: SR, full: raw, stems }, p.profile.fx, {
         createContext: (channels, frames, rate) => new OfflineAudioContext(channels, frames, rate),
         seed: n,
       });
@@ -141,6 +164,8 @@ try {
         family: p.id,
         label: p.profile.label,
         takeId: take.id,
+        engine,
+        sketch: sketch ? { seed: sketch.request.seed, key: sketch.keyLabel, tempo: sketch.tempo, bars: sketch.bars, parts: sketch.tracks.map((t) => t.label) } : null,
         vocals: take.vocals,
         model: take.model,
         mock: take.mock,
@@ -179,11 +204,14 @@ try {
 
     const ok = rows.filter((r) => !r.error);
     const md = [
-      '# Style test: one generation per family',
+      '# Style test: one piece per family',
       '',
-      `${ok.length} of ${rows.length} generated${status.mock ? ' in MOCK MODE (test signal, not music)' : ''}. Length asked for: ${formatLength(lengthSec)} each. Estimated total: ${formatUsd(ok.reduce((s, r) => s + r.estimateUsd, 0))}.`,
+      `${ok.length} of ${rows.length} made ${engine === 'sketch' ? 'with the built-in generator (free)' : status.mock ? 'in MOCK MODE (test signal, not music)' : 'with the music AI'}. Length asked for: ${formatLength(lengthSec)} each. Cost: ${formatUsd(ok.reduce((s, r) => s + r.estimateUsd, 0))}.`,
       'Numbers are measured on the files; nobody here has listened to them.',
       '',
+      ...(engine === 'sketch'
+        ? ['| Family | Seed | Key | Tempo | Parts |', '|---|---|---|---|---|', ...ok.map((r) => `| ${r.label} | ${r.sketch.seed} | ${r.sketch.key} | ${r.sketch.tempo} BPM, ${r.sketch.bars} bars | ${r.sketch.parts.join(', ')} |`), '']
+        : []),
       '| Family | Raw LUFS | Raw peak dBFS | Raw centroid Hz | Lo-fi LUFS | Lo-fi peak dBFS | Peak between samples | MP3 peak dBFS | Lo-fi centroid Hz | Side dB raw -> lo-fi | Hiss dBFS | High-cut | Speed | Length |',
       '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
       ...ok.map(
@@ -193,7 +221,7 @@ try {
       ...rows.filter((r) => r.error).map((r) => `\nFAILED ${r.label}: ${r.error?.message ?? 'unknown error'}`),
       '',
     ].join('\n');
-    writeFileSync('reports/style-test.json', `${JSON.stringify({ lengthSec, mock: status.mock, rows }, null, 2)}\n`);
+    writeFileSync('reports/style-test.json', `${JSON.stringify({ lengthSec, engine, mock: status.mock, rows }, null, 2)}\n`);
     writeFileSync('reports/style-test.md', md);
     console.log(`\n${md}\nFiles: ${outDir}/, report: reports/style-test.md`);
   }
