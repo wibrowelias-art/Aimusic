@@ -33,9 +33,13 @@ second engine. "Ambient piano (offline)" is the seeded piano engine. The owner i
    numbers (peak dBFS, RMS, silence ratio, spectral centroid, RT60, tail length, density...)
    and leave judgement of the sound to Elias. Log every change to the sound or the composer
    in `TUNING.md` with the numbers before/after.
-4. Reference-audio analysis (Phase 4) reads ONLY general traits (tempo, key, note density,
-   brightness, reverb length). It never extracts or stores melodies, chord sequences or any
-   note data.
+4. Reference-audio analysis reads ONLY general traits (tempo, key, note density, brightness,
+   reverb length). It never extracts or stores melodies, chord sequences or any pitch data.
+4b. "Match my own song" (Style Lab, asked for by Elias on 2026-11-12) is the one exception to
+   "no rhythm from a file": for a song the owner confirms is his own, it reads the tempo and
+   the hit strength per sixteenth of the bar (16 numbers) plus brightness and reverb length
+   (`src/analysis/rhythm.ts`). Still no pitches, no melody, no chords, and no audio is kept.
+   The box stays behind its "this song is mine" tick.
 
 ## Stack and conventions
 

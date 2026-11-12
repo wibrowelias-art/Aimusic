@@ -24,6 +24,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide';
+import { matchSong, type SongMatch } from '../analysis/rhythm';
 import { SAMPLE_RATE } from '../audio/constants';
 import type { StereoPcm } from '../audio/types';
 import { encodeWav } from '../audio/wav';
@@ -37,7 +38,7 @@ import {
   type PostFxNumericKey,
   type PostFxSettings,
 } from '../postfx/settings';
-import { makeSketch, parseWords, renderSketch, type Sketch, type SketchRequest } from '../sketch';
+import { makeSketch, matchFx, parseWords, renderSketch, type Sketch, type SketchRequest } from '../sketch';
 import { browserStore, readJson, writeJson, type KeyValueStore } from '../store/storage';
 import { estimateCost, formatLength, formatUsd, MUSIC_USD_PER_MINUTE, PRICE_SOURCE } from '../style/cost';
 import { checkDescriptors, GUARD_RULE } from '../style/guard';
@@ -78,6 +79,8 @@ interface LabState {
   fx: PostFxSettings;
   /** True once a chain knob was turned: the profile preset no longer rewrites it. */
   fxEdited: boolean;
+  /** "Match my own song": numbers read from the owner's file, or null. No audio is kept. */
+  match: SongMatch | null;
 }
 
 interface Decoded {
@@ -162,6 +165,7 @@ function sketchRequestOf(take: StyleTake): SketchRequest {
     words: take.words,
     vocals: take.vocals,
     lengthSec: take.lengthSec,
+    match: take.match ?? null,
   };
 }
 
@@ -245,6 +249,7 @@ export class StyleLab {
       lyricsSeed: 1,
       fx: profile.fx,
       fxEdited: false,
+      match: null,
     };
   }
 
@@ -273,6 +278,7 @@ export class StyleLab {
       lyricsSeed: num(raw.lyricsSeed, 1, 1e9, 1),
       fx: raw.fx ? normalizePostFx(raw.fx) : base.fx,
       fxEdited: raw.fxEdited === true,
+      match: raw.match && Array.isArray(raw.match.grid) && typeof raw.match.tempoBpm === 'number' ? raw.match : null,
     };
   }
 
@@ -288,7 +294,8 @@ export class StyleLab {
   /** The chain preset of the current recipe. The built-in generator also reads the words for it. */
   private presetFx(): PostFxSettings {
     const blend = blendOf(this.request()).fx;
-    return this.state.engine === 'sketch' ? parseWords(this.state.words).fx(blend) : blend;
+    if (this.state.engine !== 'sketch') return blend;
+    return parseWords(this.state.words).fx(this.state.match ? matchFx(this.state.match, blend) : blend);
   }
 
   /** Settings changed: rewrite the prompt and the chain preset unless they were edited by hand. */
@@ -422,12 +429,48 @@ export class StyleLab {
     // Plan (built-in generator)
     const planList = h('ul', { class: 'sl-plan-list' });
     const planWords = h('div', { class: 'sl-plan-words' });
+    const matchOwn = h('input', { type: 'checkbox', onchange: () => (matchFile.disabled = !matchOwn.checked) });
+    const matchFile = h('input', {
+      type: 'file',
+      accept: 'audio/*',
+      disabled: true,
+      'aria-label': 'Your own song',
+      onchange: () => void this.readMatch(matchFile),
+    });
+    const matchInfo = h('p', { class: 'sl-match-info' });
+    const matchClear = h(
+      'button',
+      {
+        class: 'btn small',
+        type: 'button',
+        onclick: () => {
+          this.state.match = null;
+          matchFile.value = '';
+          this.rebuild();
+        },
+      },
+      'Stop matching',
+    );
+    const matchBox = h(
+      'div',
+      { class: 'sl-match' },
+      h('h3', null, 'Match my own song (rhythm + tone)'),
+      h('label', { class: 'sl-match-own' }, matchOwn, 'This song is mine: I made it or I hold the rights to it.'),
+      h('div', { class: 'sl-row' }, matchFile, matchClear),
+      matchInfo,
+      h(
+        'p',
+        { class: 'hint' },
+        'Reads the tempo, where the hits fall in the bar (16 numbers), the brightness and the reverb length. The guitar, bass and drum parts then play on your rhythm and the chain is set to your tone. No melody and no chords are read; the notes stay new. The file stays in the browser and is not kept.',
+      ),
+    );
     const planPanel = h(
       'section',
       { class: 'panel sl-plan', 'aria-label': 'What it will play' },
       h('h2', null, 'What it will play'),
       planList,
       planWords,
+      matchBox,
       h(
         'p',
         { class: 'hint' },
@@ -721,6 +764,8 @@ export class StyleLab {
       planPanel,
       planList,
       planWords,
+      matchInfo,
+      matchClear,
       promptPanel,
       promptText,
       promptNote,
@@ -851,12 +896,44 @@ export class StyleLab {
     els.lengthText.textContent = formatLength(state.lengthSec);
   }
 
+  /** Decodes the owner's file, keeps the numbers, drops the audio. */
+  private async readMatch(input: HTMLInputElement): Promise<void> {
+    const file = input.files?.[0];
+    if (!file) return;
+    this.els.matchInfo.textContent = 'Reading...';
+    try {
+      const ctx = new OfflineAudioContext(2, 1, 22050);
+      const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+      const frames = Math.min(buffer.length, 22050 * 300);
+      const channels = Array.from({ length: buffer.numberOfChannels }, (_, ch) => buffer.getChannelData(ch).slice(0, frames));
+      await nextPaint();
+      const match = matchSong(channels, buffer.sampleRate);
+      if (!match) {
+        this.els.matchInfo.textContent = 'No steady tempo found in that file, so there is no rhythm to match.';
+        return;
+      }
+      this.state.match = match;
+      this.state.fxEdited = false;
+      this.rebuild();
+    } catch {
+      this.els.matchInfo.textContent = 'That file could not be read as audio.';
+    }
+  }
+
   /** The built-in generator's plan: which parts play, and what it made of the owner's words. */
   private refreshPlan(): void {
     const { els, state } = this;
     if (state.engine !== 'sketch') return;
+    const m = state.match;
+    els.matchClear.hidden = m === null;
+    if (m) {
+      const hits = m.grid.map((v) => (v >= 0.6 ? 'X' : v >= 0.3 ? 'x' : '.')).join('');
+      els.matchInfo.textContent = `Matching: ${m.tempoBpm} BPM (read ${m.readTempoBpm}), hits per sixteenth ${hits}, brightness ${m.brightnessHz} Hz, reverb ${m.decaySec === null ? 'not found' : `${m.decaySec.toFixed(1)} s`}.`;
+    } else if (!els.matchInfo.textContent?.startsWith('No steady') && !els.matchInfo.textContent?.startsWith('That file')) {
+      els.matchInfo.textContent = '';
+    }
     // The parts do not depend on the seed, so any seed shows the right list.
-    const preview = makeSketch({ ...this.request(), seed: 1 });
+    const preview = makeSketch({ ...this.request(), seed: 1, match: state.match });
     clear(els.planList);
     for (const track of preview.tracks) els.planList.append(h('li', { dataset: { group: track.group } }, track.label));
     clear(els.planWords);
@@ -1140,6 +1217,7 @@ export class StyleLab {
     const take: StyleTake = {
       engine: 'sketch',
       seed,
+      match: state.match ? { tempoBpm: state.match.tempoBpm, grid: state.match.grid } : null,
       id: `sk-${now.getTime().toString(36)}-${seed.toString(36)}`,
       createdAt: now.toISOString(),
       profileA: state.a,

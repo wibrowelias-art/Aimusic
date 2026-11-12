@@ -47,6 +47,10 @@ The two `check:*` scripts need Playwright with Chromium. `style:test` makes MP3s
   hall), bedroom mic, hiss, slowed, vocal blur. Turn a knob and it renders again. The table under the players
   shows what was measured: key and tempo, loudness (target -16 LUFS), peak (below -1 dBFS), hiss and so on.
 - Downloads: the lo-fi version and the raw version as WAV.
+- **Match my own song** (built-in generator): tick "this song is mine" and pick a file. The lab reads its
+  tempo, where the hits fall in the bar, its brightness and its reverb length. Guitar, bass and drum parts
+  then play on your rhythm and the chain is set to your tone. No melody or chords are read; the notes stay
+  new. It cannot reproduce the recording itself.
 
 ### The optional music AI engine
 

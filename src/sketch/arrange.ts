@@ -91,8 +91,50 @@ function fold(pitch: number, lo: number, hi: number): number {
   return p;
 }
 
-function eventsFor(spec: PartSpec, piece: Piece, rng: Rng): SketchEvent[] {
+/** Rhythmic roles and how strong a step of the owner's pattern has to be for them to play on it. */
+const MATCH_THRESHOLD: Partial<Record<PartSpec['role'], number>> = {
+  arpeggio: 0.3,
+  strum: 0.6,
+  bassPulse: 0.7,
+  kick: 0.75,
+  hat: 0.25,
+  machine: 0.25,
+  thump: 0.9,
+};
+
+function eventsFor(spec: PartSpec, piece: Piece, rng: Rng, grid: readonly number[] | null = null): SketchEvent[] {
   const events: SketchEvent[] = [];
+  const threshold = MATCH_THRESHOLD[spec.role];
+  if (grid && grid.length > 0 && threshold !== undefined) {
+    // The owner's pattern decides when this part plays; the pitches still come from the piece.
+    const loose = spec.loose ?? 0.008;
+    const beatSec = 60 / piece.params.tempo;
+    const stepBeats = BEATS_PER_BAR / grid.length;
+    const top = Math.max(...grid);
+    let walk = 0;
+    for (let bar = spec.fromBar ?? 0; bar < piece.bars; bar++) {
+      const chord = chordAt(piece, bar);
+      grid.forEach((strength, step) => {
+        if (strength < threshold * top) return;
+        const time = Math.max(0, scoreTime(piece, bar * BEATS_PER_BAR + step * stepBeats) + rng.range(-loose, loose));
+        const level = Math.min(1, 0.45 + 0.5 * (strength / top));
+        if (spec.role === 'arpeggio') {
+          const tones = voicing(chord, spec.centre ?? 55, 5);
+          walk = clamp(walk + rng.pick([-2, -1, 1, 1, 2]), 0, Math.max(0, tones.length - 1));
+          if (tones.length > 0) events.push({ time, duration: beatSec * 1.5, pitch: tones[walk], level });
+        } else if (spec.role === 'strum') {
+          voicing(chord, spec.centre ?? 50, 5).forEach((pitch, string) => events.push({ time: time + string * 0.022, duration: beatSec * 2, pitch, level }));
+        } else if (spec.role === 'bassPulse') {
+          events.push({ time, duration: beatSec * 1.4, pitch: rootAbove(chord, (spec.centre ?? 38) - 5), level });
+        } else {
+          events.push({ time, duration: 0.2, pitch: spec.role === 'machine' ? 76 : spec.role === 'hat' ? 42 : 36, level });
+        }
+      });
+    }
+    if (!spec.sections) return events;
+    const keep = piece.sections.filter((sec) => spec.sections?.includes(sec.name));
+    return events.filter((e) => keep.some((sec) => e.time >= sec.startTime - 0.05 && e.time < sec.endTime - 0.05));
+  }
   const loose = spec.loose ?? 0.008;
   const at = (beat: number): number => Math.max(0, scoreTime(piece, beat) + rng.range(-loose, loose));
   const beatSec = 60 / piece.params.tempo;
@@ -255,6 +297,7 @@ export function makeSketch(request: SketchRequest): Sketch {
     return lerp(lerp(ka[0], ka[1], u), lerp(kb[0], kb[1], u), t);
   };
 
+  const match = request.match && request.match.grid.length > 0 ? request.match : null;
   const weights = MODES.map((mode) => {
     const base = lerp(ra.modes[mode] ?? 0, rb.modes[mode] ?? 0, t);
     const minor = MINOR_MODES.includes(mode);
@@ -270,7 +313,7 @@ export function makeSketch(request: SketchRequest): Sketch {
     variation: 0,
     key,
     mode,
-    tempo: clamp(Math.round(pick(ra.tempo, rb.tempo) + words.tempoDelta), spec.tempo.min, spec.tempo.max),
+    tempo: clamp(Math.round((match ? match.tempoBpm : pick(ra.tempo, rb.tempo)) + words.tempoDelta), spec.tempo.min, spec.tempo.max),
     density: clamp(pick(ra.density, rb.density) * words.densityFactor, spec.density.min, spec.density.max),
     register: clamp(Math.round(pick(ra.register, rb.register) + words.registerDelta), spec.register.min, spec.register.max),
     restProbability: clamp(pick(ra.rest, rb.rest) + words.restDelta, spec.restProbability.min, spec.restProbability.max),
@@ -300,7 +343,7 @@ export function makeSketch(request: SketchRequest): Sketch {
       pan: part.pan,
       drive: part.drive ?? 0,
       pitched: !UNPITCHED.has(part.voice),
-      events: eventsFor(part, piece, rng.fork(`part:${part.id}`)).sort((x, y) => x.time - y.time || x.pitch - y.pitch),
+      events: eventsFor(part, piece, rng.fork(`part:${part.id}`), match ? match.grid : null).sort((x, y) => x.time - y.time || x.pitch - y.pitch),
     }))
     .filter((track) => track.events.length > 0);
 

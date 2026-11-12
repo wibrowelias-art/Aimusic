@@ -494,6 +494,22 @@ mid: guitars, bass and drums sit near the centre).
   as not understood.
 - One piece = one seed. There is no "Again" (same idea, played differently) in the Style Lab yet.
 
+### Match my own song (added 2026-11-12, asked for by Elias)
+
+Elias asked for a mode that copies the sound and rhythm of a song of his own. Chosen scope: rhythm + tone
+match. From the file: tempo, hit strength per sixteenth of the bar (16 numbers), spectral centroid, decay
+length. Into the generator: the tempo (folded into 40-72 BPM) and the hit pattern for the picked / strummed
+guitar, bass pulse, kick, cymbal ticks and drum machine. Into the chain: high-cut = 12 x centroid, room type
+and amount from the decay length. Not read: pitches, melody, chords. Not possible: the recording's own sound.
+
+- Check (`tests/sketch/match.test.ts`): clicks on steps 0, 4, 6, 8, 12 at 60 BPM come back as exactly those
+  five strong steps (up to a rotation by whole beats: the downbeat is a guess) and 60 BPM; silence gives no
+  match; with a pattern, the kick plays on the steps at or above 75 % of the strongest; every note stays in key.
+- In the browser, on the lab's own slowcore test piece (64 BPM): read 31.9 BPM, used 64; pattern
+  `Xxx.....x.......`; centroid 758 Hz, so high-cut 9 kHz; no free decay found, so the room knob stayed.
+- Known limits: the bar start is guessed from the energy on the beats; a full mix gives a sparse pattern;
+  tempo is read at half or double speed for some material and then folded.
+
 ### Listening questions for Elias (the five free test pieces)
 
 Three per family. Nothing in the generator or the chain gets tuned before the answers are written down here.

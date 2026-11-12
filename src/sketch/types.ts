@@ -72,6 +72,11 @@ export interface SketchRequest {
   /** True adds a wordless synthesised voice. It cannot sing words. */
   vocals: boolean;
   lengthSec: number;
+  /**
+   * "Match my own song": tempo and hit pattern read from a track the owner uploaded
+   * (numbers only, see analysis/rhythm.ts). The rhythmic parts then play on that pattern.
+   */
+  match?: { tempoBpm: number; grid: number[] } | null;
 }
 
 /** What the rules made of the owner's words. */

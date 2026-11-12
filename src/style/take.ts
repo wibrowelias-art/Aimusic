@@ -11,6 +11,8 @@ export interface StyleTake {
   engine?: 'ai' | 'sketch';
   /** uint32 seed of a 'sketch' take. */
   seed?: number;
+  /** 'sketch' takes made with "match my own song": the tempo and hit pattern that were read (numbers only). */
+  match?: { tempoBpm: number; grid: number[] } | null;
   id: string;
   /** ISO time the server wrote the file. */
   createdAt: string;

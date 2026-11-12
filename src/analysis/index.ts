@@ -18,3 +18,4 @@ export * from './fft';
 export * from './metrics';
 export * from './reference';
 export * from './loudness';
+export * from './rhythm';
