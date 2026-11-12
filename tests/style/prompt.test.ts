@@ -43,7 +43,7 @@ describe('buildPrompt', () => {
   it('switches the vocal line', () => {
     expect(buildPrompt(req({ vocals: false }))).toContain('Vocals: none. Instrumental only');
     const sung = buildPrompt(req({ a: 'dream-folk', vocals: true }));
-    expect(sung).toContain('Vocals: breathy');
+    expect(sung).toContain('Vocals: hushed');
     expect(sung).not.toContain('Instrumental only');
   });
 
@@ -57,22 +57,21 @@ describe('buildPrompt', () => {
     const pure = buildPrompt(req({ a: 'slowcore', b: 'ambient-keys', mix: 0 }));
     expect(pure).toBe(buildPrompt(req({ a: 'slowcore' })));
     const touch = buildPrompt(req({ a: 'slowcore', b: 'ambient-keys', mix: 0.2 }));
-    expect(touch).toContain('with a touch of calm, sparse ambient piece');
-    expect(touch).toContain('soft felted piano');
+    expect(touch).toContain('with a touch of calm, slow ambient piece');
+    expect(touch).toContain('analog-style synthesizer');
     const even = buildPrompt(req({ a: 'slowcore', b: 'ambient-keys', mix: 0.5 }));
     expect(even.startsWith('An even blend of')).toBe(true);
     const flipped = buildPrompt(req({ a: 'slowcore', b: 'ambient-keys', mix: 0.8 }));
-    expect(flipped.startsWith('A calm, sparse ambient piece')).toBe(true);
+    expect(flipped.startsWith('A calm, slow ambient piece')).toBe(true);
     expect(buildPrompt(req({ a: 'slowcore', b: 'ambient-keys', mix: 1 }))).toBe(buildPrompt(req({ a: 'ambient-keys' })));
   });
 
   it('does not ask to avoid what the blend asks for', () => {
-    // Ambient avoids drums; slowcore brings drums.
-    const text = buildPrompt(req({ a: 'ambient-keys', b: 'slowcore', mix: 0.45 }));
-    expect(text).toContain('drums');
-    const avoid = splitPrompt(text).avoid;
-    expect(avoid).not.toContain('drums');
-    expect(splitPrompt(buildPrompt(req({ a: 'ambient-keys' }))).avoid).toContain('drums');
+    // Dream-folk avoids drums; the bedroom demo brings a drum machine.
+    const text = buildPrompt(req({ a: 'dream-folk', b: 'bedroom-demo', mix: 0.5 }));
+    expect(text).toContain('drum machine');
+    expect(splitPrompt(text).avoid).not.toContain('drums');
+    expect(splitPrompt(buildPrompt(req({ a: 'dream-folk' }))).avoid).toContain('drums');
     // Vocals on: "vocals" leaves the avoid list.
     expect(splitPrompt(buildPrompt(req({ a: 'ambient-keys', vocals: true }))).avoid).not.toContain('vocals');
   });
@@ -82,7 +81,7 @@ describe('buildPrompt', () => {
     const b = PROFILES['slowed-reverb'];
     const half = blendOf({ a: 'bedroom-demo', b: 'slowed-reverb', mix: 0.5 });
     expect(half.tempoBpm[0]).toBe(Math.round((a.tempoBpm[0] + b.tempoBpm[0]) / 2));
-    expect(half.fx.slowedPct).toBe(9);
+    expect(half.fx.slowedPct).toBe(7);
     expect(half.fx.highCutHz).toBeGreaterThan(8000);
     expect(half.fx.highCutHz).toBeLessThan(9000);
     expect(blendOf({ a: 'bedroom-demo', b: 'bedroom-demo', mix: 0.7 }).fx).toEqual(a.fx);

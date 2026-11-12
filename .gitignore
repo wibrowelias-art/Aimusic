@@ -6,3 +6,6 @@ renders/
 reports/tmp/
 .vite
 coverage
+.env
+.env.*
+!.env.example

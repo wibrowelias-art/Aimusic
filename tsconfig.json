@@ -27,6 +27,7 @@
     "tests",
     "dev",
     "scripts",
+    "server",
     "vite.config.ts",
     "vitest.measure.config.ts"
   ]

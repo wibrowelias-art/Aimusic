@@ -31,6 +31,12 @@ function unique(items: readonly string[]): string[] {
   return out;
 }
 
+/** Last word of an avoid item without its plural s: "big drums" -> "drum". */
+function headNoun(item: string): string {
+  const words = item.toLowerCase().trim().split(/\s+/);
+  return (words[words.length - 1] ?? '').replace(/s$/, '');
+}
+
 export interface Blend {
   /** The profile with the bigger share. */
   lead: StyleProfile;
@@ -84,7 +90,7 @@ export function buildPrompt(req: StyleRequest): string {
   lines.push(`Structure: ${lead.structure}.`);
   // Do not ask to avoid something the blend just asked for.
   const wanted = instruments.join(' ').toLowerCase();
-  const avoid = lead.avoid.filter((item) => !wanted.includes(item.toLowerCase()) && !(req.vocals && /vocal|sing/i.test(item)));
+  const avoid = lead.avoid.filter((item) => !wanted.includes(headNoun(item)) && !(req.vocals && /vocal|sing/i.test(item)));
   if (avoid.length > 0) lines.push(`Avoid: ${avoid.join(', ')}.`);
   const words = req.words.trim().replace(/\s+/g, ' ');
   if (words) lines.push(`Also: ${words.replace(/[.\s]+$/, '')}.`);
