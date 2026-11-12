@@ -207,3 +207,48 @@ Files to listen to: `renders/phase1-warm-seed1.wav`, `-sad-`, `-dreamy-`, `-cave
    a wet level of -4 dB. Knobs: the reverb ranges of the presets, `PIANO_WET_DB`.
 
    Answer:
+
+## 2. Phase 2 (interface)
+
+No change to the composer or to the sound constants in this phase. What was added and measured:
+
+- `npm run check:ui` drives the real app in headless Chromium 153: 41 checks, all pass (Generate plays, Again
+  keeps seed + settings and bumps the variation, a knob edit, rating, favorites, waveform, MIDI / WAV / stems
+  export, seek, shortcuts, reload, 390 px layout, zero console errors).
+- WAV exported from the browser: 48 kHz, stereo, 16 bit, measured sample peak -1.50 dBFS, 0 clipped samples.
+  The same take exported twice gives byte-identical MIDI.
+- Offline render in headless Chromium in this sandbox: 1:42 of audio in 23.9 s, 1:27 in 18.8 s (about 0.22 s per
+  second of audio). Playback does not wait for it; only the waveform view and the WAV / stems export do.
+- Seeking (new, `fromSec` in `buildGraph`): a graph started at 6.3 / 12 / 19.5 s of the fixture piece has, 3 s
+  later, the same level as a render from the start (-25.3 / -25.9 / -32.1 dBFS in both), and its first 150 ms are
+  not louder than the full render at that point (-40.3 / -46.1 / -26.0 against -34.0 / -33.3 / -26.3 dBFS).
+  Notes that were already damped are left out; the reverb of notes before the seek point is missing by design.
+- Realtime playback uses a fixed master gain of +4 dB (`PLAYER_DEFAULT_GAIN_DB`) and a safety limiter at -2 dBFS;
+  the export is normalised instead (gain +4.8 to +9.3 dB on the baseline takes). So playback is 1 to 5 dB below
+  the export on those takes.
+- Rating loop (`src/store/learning.ts`): a like moves the centre of every range 25 % of the way to the liked
+  value and narrows the range to 92 %; a dislike moves it 15 % away and widens it to 104 %; widths stay between
+  35 % and 150 % of the preset's own width. Example from the UI check: one like on a Warm take at tempo 60 and
+  30 % silent bars moved Warm from "50 to 62 BPM" to "51 to 63 BPM".
+- Size: JS 95 kB (35 kB gzip), CSS 12 kB, piano samples 2.5 MB (loaded on the first Generate).
+
+### Listening questions for Elias (Phase 2)
+
+Run `npm install && npm run dev`, open the printed URL, press Generate.
+
+1. **Again:** after Generate, press Again two or three times. Does each take still feel like the same piece
+   (same idea, same chords) and is it different enough to be worth having? Knob: how much of the development is
+   re-drawn per variation (composer).
+
+   Answer:
+
+2. **Playback:** any clicks, dropouts or jumps when a note starts, when you click into the piano roll, or when
+   you turn Reverb / Lo-fi / Pad / Rain while it plays? Is playback loud enough next to the exported WAV?
+   Knobs: `PLAYER_DEFAULT_GAIN_DB` (+4 dB), `PLAYER_LOOKAHEAD_SEC` (1.5 s).
+
+   Answer:
+
+3. **Moods:** are Warm, Sad, Dreamy and Cave far enough apart, and is any of them wrong for its name? Which
+   knob do you reach for first in each? Knobs: the ranges in `PRESETS` (`src/engine/params.ts`).
+
+   Answer:
